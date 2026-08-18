@@ -496,22 +496,81 @@ function marcarPagamento(key, pago){
   render();
 }
 
+/* ================= MÓDULOS =================
+   Para criar um módulo novo: escreva as telas num arquivo .js proprio,
+   carregue no index.html e acrescente um bloco aqui. Nada mais muda.
+   ============================================ */
+var MODULOS = [
+  { id:'fin', nome:'Financeiro', sigla:'F', cor:'#34D399', telas:[
+      { v:'dash',   n:'Painel',            f:function(){ return vDash(); }, badge:function(){ return alertas().length; } },
+      { v:'proj',   n:'Projeção',          f:function(){ return vProj(); } },
+      { v:'sim',    n:'Simulador',         f:function(){ return vSim(); } },
+      { v:'cli',    n:'Clientes',          f:function(){ return vCli(); } },
+      { v:'cus',    n:'Custos',            f:function(){ return vCus(); } },
+      { v:'mes',    n:'Fechamento',        f:function(){ return vMes(); },
+        badge:function(){ return pendencias(ymHoje()).filter(function(r){ return !r.pago; }).length; } },
+      { v:'marg',   n:'Margem por cliente',f:function(){ return vMarg(); } }
+  ]},
+  { id:'mid', nome:'Mídias', sigla:'M', cor:'#7C5CFF', telas:[
+      { v:'portal', n:'Portal do cliente', f:function(){ return vPortal(); } }
+  ]},
+  { id:'sis', nome:'Sistema', sigla:'S', cor:'#7C8798', telas:[
+      { v:'cfg',    n:'Parâmetros',        f:function(){ return vCfg(); } }
+  ]}
+];
+var MOD_ABERTO = 'fin';
+
+function moduloDe(v){
+  for(var i = 0; i < MODULOS.length; i++)
+    for(var j = 0; j < MODULOS[i].telas.length; j++)
+      if(MODULOS[i].telas[j].v === v) return MODULOS[i];
+  return MODULOS[0];
+}
+function telaDe(v){
+  for(var i = 0; i < MODULOS.length; i++)
+    for(var j = 0; j < MODULOS[i].telas.length; j++)
+      if(MODULOS[i].telas[j].v === v) return MODULOS[i].telas[j];
+  return MODULOS[0].telas[0];
+}
+function contaBadge(t){ try{ return t.badge ? t.badge() : 0; }catch(e){ return 0; } }
+
 /* ================= NAVEGAÇÃO ================= */
 function go(v){
   VIEW = v;
   if(v !== 'portal') PORTAL_SEL = '';
-  document.querySelectorAll('.nv-i').forEach(function(b){ b.classList.toggle('on', b.dataset.v === v); });
+  MOD_ABERTO = moduloDe(v).id;
   render();
   window.scrollTo(0, 0);
 }
+function abreModulo(id){
+  var m = MODULOS.filter(function(x){ return x.id === id; })[0];
+  if(!m) return;
+  if(MOD_ABERTO === id && moduloDe(VIEW).id === id){ MOD_ABERTO = ''; renderNav(); return; }
+  MOD_ABERTO = id;
+  if(moduloDe(VIEW).id !== id) go(m.telas[0].v); else renderNav();
+}
+function renderNav(){
+  var atualMod = moduloDe(VIEW).id;
+  $('navList').innerHTML = MODULOS.map(function(m){
+    var aberto = MOD_ABERTO === m.id;
+    var soma = m.telas.reduce(function(a, t){ return a + contaBadge(t); }, 0);
+    var cab = '<button class="nv-m ' + (aberto ? 'open' : '') + '" onclick="abreModulo(\'' + m.id + '\')">' +
+      '<i class="nv-sq" style="background:' + m.cor + (aberto || atualMod === m.id ? '' : ';opacity:.35') + '">' + m.sigla + '</i>' +
+      m.nome +
+      (!aberto && soma ? '<span class="nv-badge">' + soma + '</span>' : '') +
+      '<i class="nv-ch">▼</i></button>';
+    if(!aberto) return cab;
+    return cab + '<div class="nv-sub">' + m.telas.map(function(t){
+      var b = contaBadge(t);
+      return '<button class="nv-i ' + (VIEW === t.v ? 'on' : '') + '" onclick="go(\'' + t.v + '\')">' +
+        '<i class="nv-d"></i>' + t.n + (b ? '<span class="nv-badge">' + b + '</span>' : '') + '</button>';
+    }).join('') + '</div>';
+  }).join('');
+}
 function render(){
   if($('app').classList.contains('hidden')) return;
-  var al = alertas(), pend = pendencias(ymHoje()).filter(function(r){ return !r.pago; });
-  var b1 = $('nbAl'), b2 = $('nbMes');
-  b1.textContent = al.length; b1.classList.toggle('hidden', !al.length);
-  b2.textContent = pend.length; b2.classList.toggle('hidden', !pend.length);
-  var f = { dash:vDash, proj:vProj, sim:vSim, cli:vCli, cus:vCus, mes:vMes, marg:vMarg, cfg:vCfg, portal:vPortal }[VIEW] || vDash;
-  $('main').innerHTML = f();
+  renderNav();
+  $('main').innerHTML = telaDe(VIEW).f();
 }
 
 /* ================= PAINEL ================= */

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2STEP · Caixa e Projeção</title>
+<title>2STEP · Operação</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -57,12 +57,20 @@ button{cursor:pointer;border:none;background:none}
 .nv-tag{font-size:10px;color:var(--mute2);letter-spacing:.14em;text-transform:uppercase;margin-top:2px}
 .nv-list{flex:1;padding:12px 10px;overflow-y:auto}
 .nv-sec{font-size:9.5px;color:var(--mute2);letter-spacing:.14em;text-transform:uppercase;padding:14px 10px 6px}
-.nv-i{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:8px;color:var(--mute);font-weight:500;font-size:13.5px;text-align:left;transition:.13s}
+.nv-m{display:flex;align-items:center;gap:9px;width:100%;padding:10px 10px;border-radius:8px;color:var(--ink);font-family:var(--disp);font-weight:600;font-size:13.5px;text-align:left;transition:.13s;letter-spacing:-.01em}
+.nv-m:hover{background:var(--slab2)}
+.nv-m.open{color:#fff}
+.nv-ch{margin-left:auto;font-size:9px;color:var(--mute2);transition:.18s;transform:rotate(-90deg);display:inline-block}
+.nv-m.open .nv-ch{transform:rotate(0deg)}
+.nv-sq{width:16px;height:16px;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#0A0C10;font-family:var(--disp)}
+.nv-sub{padding:2px 0 8px 8px;margin-left:15px;border-left:1px solid var(--line)}
+.nv-i{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:8px;color:var(--mute);font-weight:500;font-size:13px;text-align:left;transition:.13s}
 .nv-i:hover{background:var(--slab2);color:var(--ink)}
 .nv-i.on{background:var(--volt-dim);color:var(--ink)}
 .nv-i.on .nv-d{background:var(--volt)}
 .nv-d{width:5px;height:5px;border-radius:50%;background:var(--line2);flex-shrink:0}
-.nv-badge{margin-left:auto;background:var(--coral);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;font-family:var(--mono)}
+.nv-badge{margin-left:auto;background:var(--coral);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;font-family:var(--mono);flex-shrink:0}
+.nv-m .nv-badge{margin-left:0}
 .nv-foot{padding:12px 14px;border-top:1px solid var(--line);font-size:11px;color:var(--mute2);display:flex;justify-content:space-between;align-items:center}
 .nv-foot button{color:var(--mute2);font-size:11px}
 .nv-foot button:hover{color:var(--coral)}
@@ -228,9 +236,13 @@ textarea.fi{resize:vertical;min-height:64px;font-family:inherit}
   #app{flex-direction:column}
   #nav{width:100%;height:auto;position:static;flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--line)}
   .nv-top,.nv-foot{display:none}
-  .nv-list{display:flex;padding:8px;gap:4px}
+  .nv-list{display:flex;padding:8px;gap:5px;align-items:center}
   .nv-sec{display:none}
-  .nv-i{white-space:nowrap;padding:8px 12px}
+  .nv-i{white-space:nowrap;padding:8px 12px;width:auto}
+  .nv-m{white-space:nowrap;padding:8px 12px;width:auto;background:var(--slab2);border:1px solid var(--line)}
+  .nv-m.open{border-color:var(--volt);background:var(--volt-dim)}
+  .nv-ch{display:none}
+  .nv-sub{display:contents;padding:0;margin:0;border:none}
   #main{padding:18px 14px 60px}
   .g4,.g3,.g2,.fr2,.fr3{grid-template-columns:1fr}
   .hd h1{font-size:21px}
@@ -243,7 +255,7 @@ textarea.fi{resize:vertical;min-height:64px;font-family:inherit}
 <div id="login">
   <div class="lg-box">
     <div class="lg-mark">2<span>STEP</span></div>
-    <div class="lg-sub">Caixa &amp; Projeção</div>
+    <div class="lg-sub">Central de Operação</div>
     <input type="email" class="lg-f" id="email" autocomplete="username" placeholder="seu e-mail">
     <input type="password" class="lg-f" id="senha" autocomplete="current-password" placeholder="sua senha">
     <button class="lg-btn" id="btEntrar" onclick="tryLogin()">Entrar</button>
@@ -256,23 +268,9 @@ textarea.fi{resize:vertical;min-height:64px;font-family:inherit}
   <nav id="nav">
     <div class="nv-top">
       <div class="nv-mark">2<span>STEP</span></div>
-      <div class="nv-tag">Caixa &amp; Projeção</div>
+      <div class="nv-tag">Central de Operação</div>
     </div>
-    <div class="nv-list">
-      <div class="nv-sec">Visão</div>
-      <button class="nv-i on" data-v="dash" onclick="go('dash')"><i class="nv-d"></i>Painel<span class="nv-badge hidden" id="nbAl"></span></button>
-      <button class="nv-i" data-v="proj" onclick="go('proj')"><i class="nv-d"></i>Projeção</button>
-      <button class="nv-i" data-v="sim" onclick="go('sim')"><i class="nv-d"></i>Simulador</button>
-      <div class="nv-sec">Clientes</div>
-      <button class="nv-i" data-v="portal" onclick="go('portal')"><i class="nv-d"></i>Portal de mídias</button>
-      <div class="nv-sec">Cadastros</div>
-      <button class="nv-i" data-v="cli" onclick="go('cli')"><i class="nv-d"></i>Clientes</button>
-      <button class="nv-i" data-v="cus" onclick="go('cus')"><i class="nv-d"></i>Custos</button>
-      <div class="nv-sec">Operação</div>
-      <button class="nv-i" data-v="mes" onclick="go('mes')"><i class="nv-d"></i>Fechamento<span class="nv-badge hidden" id="nbMes"></span></button>
-      <button class="nv-i" data-v="marg" onclick="go('marg')"><i class="nv-d"></i>Margem por cliente</button>
-      <button class="nv-i" data-v="cfg" onclick="go('cfg')"><i class="nv-d"></i>Parâmetros</button>
-    </div>
+    <div class="nv-list" id="navList"></div>
     <div class="nv-foot">
       <span id="dbState" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">·</span>
       <button onclick="lock()">Sair</button>

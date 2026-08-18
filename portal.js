@@ -176,7 +176,8 @@ function vPortalCliente(c){
   '<button class="bk" onclick="pVoltar()">← Todos os clientes</button>' +
   '<div class="hd"><div><h1>' + esc(c.nome) +
     (c.status === 'aviso' ? ' <span class="pill p-av" style="vertical-align:middle">em aviso prévio</span>' : '') + '</h1><p>' +
-    (c.servicos ? esc(c.servicos) + ' · ' : '') + brl(c.mensalidade) + '/mês · cliente desde ' + dLabel(c.dataInicio) +
+    (c.servicos ? esc(c.servicos) + ' · ' : '') +
+    (euSouAdmin() ? brl(c.mensalidade) + '/mês · ' : '') + 'cliente desde ' + dLabel(c.dataInicio) +
     (c.status === 'aviso' ? ' · sai em ' + dLabel(ultimaMensalidade(c)) : '') + '</p></div>' +
   '<div class="hd-act">' +
     (ocultos ? '<button class="btn" onclick="pOcultos()">' + (PORTAL_OCULTOS ? 'Esconder ocultos' : 'Ver ' + ocultos + ' oculto(s)') + '</button>' : '') +

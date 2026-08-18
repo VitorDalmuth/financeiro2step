@@ -1,0 +1,38 @@
+{
+  "rules": {
+    "2step_financeiro": {
+      "usuarios": {
+        ".read": "auth != null",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      },
+      "clientes": {
+        ".read": "auth != null",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      },
+      "portais": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      "custos": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      },
+      "recebimentos": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      },
+      "pagamentos": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      },
+      "config": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      },
+      "backups": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      }
+    }
+  }
+}

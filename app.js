@@ -18,7 +18,12 @@ var FB = {
 var ROOT = "2step_financeiro";
 
 /* ================= ESTADO ================= */
-var DB = null, AUTH = null, MEM = false, LIGADO = false;
+var DB = null, AUTH = null, MEM = false, LIGADO = false, ESCUTANDO = false;
+var EMAIL = '', PAPEL = 'admin';
+var PAPEIS = {
+  admin:    { nome:'Administrador', desc:'Acesso total: financeiro, mídias e usuários', cor:'#34D399' },
+  operacao: { nome:'Operação',      desc:'Só o portal de mídias. Não vê nada do financeiro', cor:'#7C5CFF' }
+};
 var S = {
   clientes: {},
   custos: {},
@@ -26,6 +31,7 @@ var S = {
   pagamentos: {},     // chave: custoId__YYYY-MM
   backups: {},        // chave: YYYY-MM
   portais: {},        // chave: clienteId -> { linkId: {...} }
+  usuarios: {},       // chave: e-mail com virgulas no lugar dos pontos
   config: {
     saldoInicial: 0,
     saldoInicialMes: '',
@@ -40,6 +46,20 @@ var S = {
 };
 var VIEW = 'dash';
 var MESREF = '';
+
+/* ================= USUÁRIOS E PAPÉIS ================= */
+function chaveEmail(e){ return String(e || '').trim().toLowerCase().replace(/\./g, ','); }
+function euSouAdmin(){ return PAPEL === 'admin'; }
+function semUsuarios(){ return !Object.keys(S.usuarios).length; }
+function papelDe(email){
+  if(semUsuarios()) return 'admin';           // primeiro acesso: quem entra e o dono
+  var u = S.usuarios[chaveEmail(email)];
+  return u ? (u.papel || 'operacao') : 'sem-acesso';
+}
+function listaUsuarios(){
+  return Object.keys(S.usuarios).map(function(k){ return S.usuarios[k]; })
+    .sort(function(a, b){ return String(a.nome || a.email).localeCompare(String(b.nome || b.email), 'pt-BR'); });
+}
 
 /* ================= UTILS ================= */
 function $(id){ return document.getElementById(id); }
@@ -117,28 +137,47 @@ function initDB(){
 function abreApp(user){
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
-  $('dbState').innerHTML = '<span style="color:var(--mint)">●</span> ' + esc(user.email || 'conectado');
+  $('dbState').innerHTML = '<span style="color:var(--mint)">●</span> ' + esc(user.email || 'conectado') +
+    '<br><span style="color:var(--mute2);font-size:10px">' + ((PAPEIS[PAPEL] || {}).nome || 'sem acesso') + '</span>';
   $('dbState').title = user.email || '';
+  EMAIL = user.email || '';
   if(!LIGADO){
     LIGADO = true;
-    DB.ref(ROOT).on('value', function(snap){
-      var d = snap.val() || {};
-      S.clientes     = d.clientes || {};
-      S.custos       = d.custos || {};
-      S.recebimentos = d.recebimentos || {};
-      S.pagamentos   = d.pagamentos || {};
-      S.backups      = d.backups || {};
-      S.portais      = d.portais || {};
-      S.config       = Object.assign({}, S.config, d.config || {});
+    /* a lista de usuarios vem primeiro: e ela que define o que sera carregado depois */
+    DB.ref(ROOT + '/usuarios').on('value', function(snap){
+      S.usuarios = snap.val() || {};
+      PAPEL = papelDe(EMAIL);
+      $('dbState').innerHTML = '<span style="color:var(--mint)">●</span> ' + esc(EMAIL) +
+        '<br><span style="color:var(--mute2);font-size:10px">' + ((PAPEIS[PAPEL] || {}).nome || 'sem acesso') + '</span>';
+      ligaDados();
       render();
-      snapshotMensal();
-    }, function(err){
-      toast('Sem permissao de leitura no banco. Confira as regras.', 'err');
+    }, function(){
+      PAPEL = 'sem-acesso';
+      render();
     });
   }
   render();
 }
+function ouve(no, aplica){
+  DB.ref(ROOT + '/' + no).on('value', function(snap){
+    aplica(snap.val() || {});
+    render();
+  }, function(){ /* sem permissao neste no: segue sem ele */ });
+}
+function ligaDados(){
+  if(ESCUTANDO || PAPEL === 'sem-acesso') return;
+  ESCUTANDO = true;
+  ouve('clientes', function(v){ S.clientes = v; });
+  ouve('portais',  function(v){ S.portais  = v; });
+  if(!euSouAdmin()) return;
+  ouve('custos',       function(v){ S.custos = v; });
+  ouve('recebimentos', function(v){ S.recebimentos = v; });
+  ouve('pagamentos',   function(v){ S.pagamentos = v; });
+  ouve('backups',      function(v){ S.backups = v; snapshotMensal(); });
+  ouve('config',       function(v){ S.config = Object.assign({}, S.config, v); });
+}
 function fechaApp(){
+  EMAIL = ''; PAPEL = 'admin';
   $('app').classList.add('hidden');
   $('login').classList.remove('hidden');
   $('senha').value = '';
@@ -153,7 +192,7 @@ function del(caminho){
   return DB.ref(ROOT + '/' + caminho).remove();
 }
 function pacote(){
-  return { clientes:S.clientes, custos:S.custos, recebimentos:S.recebimentos, pagamentos:S.pagamentos, portais:S.portais, config:S.config };
+  return { clientes:S.clientes, custos:S.custos, recebimentos:S.recebimentos, pagamentos:S.pagamentos, portais:S.portais, usuarios:S.usuarios, config:S.config };
 }
 var SNAP_OK = false;
 /* copia automatica dentro do proprio banco, uma por mes, mantendo as 6 ultimas */
@@ -179,7 +218,7 @@ function restaurarSnapshot(ym){
   var antes = { ym:'antes-' + ymHoje(), criadoEm:new Date().toISOString(), dados:JSON.stringify(pacote()) };
   var d = JSON.parse(reg.dados);
   DB.ref(ROOT + '/backups/antes-' + ymHoje()).set(antes).then(function(){
-    return DB.ref(ROOT).update({ clientes:d.clientes||{}, custos:d.custos||{}, recebimentos:d.recebimentos||{}, pagamentos:d.pagamentos||{}, portais:d.portais||{}, config:d.config||S.config });
+    return DB.ref(ROOT).update({ clientes:d.clientes||{}, custos:d.custos||{}, recebimentos:d.recebimentos||{}, pagamentos:d.pagamentos||{}, portais:d.portais||{}, usuarios:d.usuarios||S.usuarios, config:d.config||S.config });
   }).then(function(){ toast('Copia de ' + ymLabelL(ym) + ' restaurada', 'ok'); });
 }
 function precisaDownload(){
@@ -501,7 +540,7 @@ function marcarPagamento(key, pago){
    carregue no index.html e acrescente um bloco aqui. Nada mais muda.
    ============================================ */
 var MODULOS = [
-  { id:'fin', nome:'Financeiro', sigla:'F', cor:'#34D399', telas:[
+  { id:'fin', nome:'Financeiro', sigla:'F', cor:'#34D399', papeis:['admin'], telas:[
       { v:'dash',   n:'Painel',            f:function(){ return vDash(); }, badge:function(){ return alertas().length; } },
       { v:'proj',   n:'Projeção',          f:function(){ return vProj(); } },
       { v:'sim',    n:'Simulador',         f:function(){ return vSim(); } },
@@ -511,15 +550,28 @@ var MODULOS = [
         badge:function(){ return pendencias(ymHoje()).filter(function(r){ return !r.pago; }).length; } },
       { v:'marg',   n:'Margem por cliente',f:function(){ return vMarg(); } }
   ]},
-  { id:'mid', nome:'Mídias', sigla:'M', cor:'#7C5CFF', telas:[
+  { id:'mid', nome:'Mídias', sigla:'M', cor:'#7C5CFF', papeis:['admin','operacao'], telas:[
       { v:'portal', n:'Portal do cliente', f:function(){ return vPortal(); } }
   ]},
-  { id:'sis', nome:'Sistema', sigla:'S', cor:'#7C8798', telas:[
+  { id:'sis', nome:'Sistema', sigla:'S', cor:'#7C8798', papeis:['admin'], telas:[
+      { v:'usr',    n:'Usuários',          f:function(){ return vUsr(); } },
       { v:'cfg',    n:'Parâmetros',        f:function(){ return vCfg(); } }
   ]}
 ];
 var MOD_ABERTO = 'fin';
 
+function modulosVisiveis(){
+  return MODULOS.filter(function(m){ return !m.papeis || m.papeis.indexOf(PAPEL) > -1; });
+}
+function podeVer(v){
+  return modulosVisiveis().some(function(m){
+    return m.telas.some(function(t){ return t.v === v; });
+  });
+}
+function primeiraTela(){
+  var m = modulosVisiveis()[0];
+  return m ? m.telas[0].v : '';
+}
 function moduloDe(v){
   for(var i = 0; i < MODULOS.length; i++)
     for(var j = 0; j < MODULOS[i].telas.length; j++)
@@ -551,7 +603,7 @@ function abreModulo(id){
 }
 function renderNav(){
   var atualMod = moduloDe(VIEW).id;
-  $('navList').innerHTML = MODULOS.map(function(m){
+  $('navList').innerHTML = modulosVisiveis().map(function(m){
     var aberto = MOD_ABERTO === m.id;
     var soma = m.telas.reduce(function(a, t){ return a + contaBadge(t); }, 0);
     var cab = '<button class="nv-m ' + (aberto ? 'open' : '') + '" onclick="abreModulo(\'' + m.id + '\')">' +
@@ -569,8 +621,16 @@ function renderNav(){
 }
 function render(){
   if($('app').classList.contains('hidden')) return;
+  if(PAPEL === 'sem-acesso'){ $('navList').innerHTML = ''; $('main').innerHTML = vSemAcesso(); return; }
+  if(!podeVer(VIEW)) VIEW = primeiraTela();
   renderNav();
   $('main').innerHTML = telaDe(VIEW).f();
+}
+function vSemAcesso(){
+  return '<div class="hd"><div><h1>Acesso não liberado</h1>' +
+    '<p>Sua conta entrou, mas ainda não tem permissão definida neste app</p></div></div>' +
+    '<div class="tw"><div class="empty"><b>' + esc(EMAIL) + '</b>' +
+    'Peça a quem administra o app para cadastrar este e-mail em Sistema › Usuários.</div></div>';
 }
 
 /* ================= PAINEL ================= */
@@ -1041,6 +1101,89 @@ function vMarg(){
     : '<div class="empty"><b>Nenhum cliente ativo</b>A margem aparece assim que houver contrato vigente.</div>') + '</div>';
 }
 
+/* ================= USUÁRIOS ================= */
+function vUsr(){
+  var us = listaUsuarios();
+  var eu = chaveEmail(EMAIL);
+  var admins = us.filter(function(u){ return u.papel === 'admin'; }).length;
+
+  var rows = us.map(function(u){
+    var p = PAPEIS[u.papel] || PAPEIS.operacao;
+    var sou = chaveEmail(u.email) === eu;
+    return '<tr>' +
+      '<td><div class="nm">' + esc(u.nome || u.email) + (sou ? ' <span class="pill p-vl">você</span>' : '') + '</div>' +
+        '<div class="sub mono">' + esc(u.email) + '</div></td>' +
+      '<td><span class="pill" style="background:' + p.cor + '22;color:' + p.cor + '">' + p.nome + '</span>' +
+        '<div class="sub">' + p.desc + '</div></td>' +
+      '<td class="tr" style="white-space:nowrap">' +
+        '<button class="btn btn-s" onclick="mUsr(\'' + chaveEmail(u.email) + '\')">Editar</button> ' +
+        (sou ? '' : '<button class="btn btn-s btn-d" onclick="delUsr(\'' + chaveEmail(u.email) + '\')">Remover</button>') +
+      '</td></tr>';
+  }).join('');
+
+  return '' +
+  '<div class="hd"><div><h1>Usuários</h1><p>Quem entra no app e o que cada um enxerga</p></div>' +
+  '<div class="hd-act"><button class="btn btn-p" onclick="mUsr()">+ Liberar acesso</button></div></div>' +
+
+  (semUsuarios() ? '<div class="note">Ainda não há ninguém cadastrado, então qualquer conta que faça login entra como administrador. Cadastre o seu e-mail (' + esc(EMAIL) + ') como Administrador agora — a partir daí, só quem estiver nesta lista entra.</div>' : '') +
+  (!semUsuarios() && admins === 1 ? '<div class="note">Você é o único administrador. Se perder o acesso a este e-mail, ninguém consegue liberar outro pelo app — só apagando o nó <b>usuarios</b> direto no Console do Firebase.</div>' : '') +
+
+  '<div class="tw">' + (us.length ?
+    '<div class="tsc"><table><thead><tr><th>Pessoa</th><th>Papel</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+    : '<div class="empty"><b>Nenhum acesso liberado</b>Cadastre o seu e-mail primeiro, depois os da equipe.</div>') + '</div>' +
+
+  '<div class="tw mt12"><div class="tw-hd"><div class="tw-t">Como liberar alguém</div></div><div style="padding:18px">' +
+  '<div style="font-size:13.5px;line-height:1.7;color:var(--mute)">' +
+  '<b style="color:var(--ink)">1.</b> No Console do Firebase, em Authentication › Users, clique em <b style="color:var(--ink)">Adicionar usuário</b> e crie o e-mail com uma senha provisória.<br>' +
+  '<b style="color:var(--ink)">2.</b> Volte aqui, clique em <b style="color:var(--ink)">Liberar acesso</b> e cadastre o mesmo e-mail com o papel dele.<br>' +
+  '<b style="color:var(--ink)">3.</b> Passe o e-mail e a senha. Ele entra e troca a senha por conta própria.' +
+  '</div><div class="hint mt12">O passo 1 é no Console porque o navegador não permite criar usuário sem trocar de sessão — se fosse feito aqui, você seria deslogado.</div>' +
+  '</div></div>';
+}
+function mUsr(k){
+  var u = k ? S.usuarios[k] : { email:'', nome:'', papel:'operacao' };
+  if(!u) return;
+  modal(k ? 'Editar acesso' : 'Liberar acesso',
+    '<div class="fr fr2">' +
+      '<div class="fg"><label class="fl">Nome</label><input class="fi" id="u_nome" value="' + esc(u.nome) + '" placeholder="Como você chama a pessoa"></div>' +
+      '<div class="fg"><label class="fl">E-mail</label><input type="email" class="fi" id="u_mail" value="' + esc(u.email) + '" ' + (k ? 'disabled style="opacity:.6"' : '') + ' placeholder="o mesmo do Firebase"></div>' +
+    '</div>' +
+    '<div class="fg"><label class="fl">Papel</label>' +
+      Object.keys(PAPEIS).map(function(p){
+        return '<label class="chk ' + (u.papel === p ? 'on' : '') + '" style="margin-bottom:8px">' +
+          '<input type="radio" name="u_papel" value="' + p + '" ' + (u.papel === p ? 'checked' : '') + ' style="accent-color:var(--volt)" onchange="marcaPapel(this)">' +
+          '<span style="flex:1"><b>' + PAPEIS[p].nome + '</b><div class="hint" style="margin:2px 0 0">' + PAPEIS[p].desc + '</div></span></label>';
+      }).join('') + '</div>' +
+    (k ? '' : '<div class="hint">Este e-mail precisa existir em Authentication › Users no Console do Firebase, senão a pessoa não consegue fazer login.</div>'),
+    '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="saveUsr(\'' + (k || '') + '\')">Salvar acesso</button>');
+}
+function marcaPapel(el){
+  var box = el.closest('.fg');
+  if(box) box.querySelectorAll('.chk').forEach(function(c){ c.classList.toggle('on', c.contains(el) ? el.checked : false); });
+}
+function saveUsr(k){
+  var mail = k ? S.usuarios[k].email : $('u_mail').value.trim().toLowerCase();
+  if(!mail || mail.indexOf('@') < 0) return toast('Informe um e-mail válido', 'err');
+  var sel = document.querySelector('input[name=u_papel]:checked');
+  var u = { email:mail, nome:$('u_nome').value.trim() || mail.split('@')[0], papel: sel ? sel.value : 'operacao' };
+  var ck = chaveEmail(mail);
+  S.usuarios[ck] = u;
+  save('usuarios/' + ck, u);
+  if(ck === chaveEmail(EMAIL)) PAPEL = u.papel;
+  fecha(); render();
+  toast(k ? 'Acesso atualizado' : 'Acesso liberado', 'ok');
+}
+function delUsr(k){
+  var u = S.usuarios[k];
+  if(!u) return;
+  if(chaveEmail(u.email) === chaveEmail(EMAIL)) return toast('Você não pode remover o próprio acesso', 'err');
+  if(!confirm('Remover o acesso de ' + (u.nome || u.email) + '?\n\nEle deixa de entrar no app. A conta continua existindo no Firebase até você excluir por lá também.')) return;
+  delete S.usuarios[k];
+  del('usuarios/' + k);
+  render();
+  toast('Acesso removido');
+}
+
 /* ================= PARÂMETROS ================= */
 function vCfg(){
   var c = S.config;
@@ -1108,6 +1251,7 @@ function importJSON(el){
       S.clientes = d.clientes || {}; S.custos = d.custos || {};
       S.recebimentos = d.recebimentos || {}; S.pagamentos = d.pagamentos || {};
       S.portais = d.portais || {};
+      S.usuarios = d.usuarios || {};
       S.config = Object.assign({}, S.config, d.config || {});
       if(!MEM && DB) DB.ref(ROOT).set(pacote());
       render(); toast('Backup restaurado', 'ok');

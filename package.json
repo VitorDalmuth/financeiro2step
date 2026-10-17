@@ -1,0 +1,9 @@
+{
+  "name": "financeiro2step",
+  "private": true,
+  "description": "Dependências das funções da Vercel em /api (integração Asaas). O site continua estático.",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "firebase-admin": "12.7.0"
+  }
+}

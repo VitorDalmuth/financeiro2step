@@ -550,8 +550,8 @@ var MODULOS = [
         badge:function(){ return pendencias(ymHoje()).filter(function(r){ return !r.pago; }).length; } },
       { v:'marg',   n:'Margem por cliente',f:function(){ return vMarg(); } }
   ]},
-  { id:'mid', nome:'Mídias', sigla:'M', cor:'#7C5CFF', papeis:['admin','operacao'], telas:[
-      { v:'portal', n:'Portal do cliente', f:function(){ return vPortal(); } }
+  { id:'mid', nome:'Operacional', sigla:'O', cor:'#7C5CFF', papeis:['admin','operacao'], telas:[
+      { v:'portal', n:'Mídias', f:function(){ return vPortal(); } }
   ]},
   { id:'sis', nome:'Sistema', sigla:'S', cor:'#7C8798', papeis:['admin'], telas:[
       { v:'usr',    n:'Usuários',          f:function(){ return vUsr(); } },

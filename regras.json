@@ -40,6 +40,10 @@
       "comercial": {
         ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'",
         ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+      },
+      "registros": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
       }
     }
   }

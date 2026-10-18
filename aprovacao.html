@@ -247,7 +247,7 @@ function responde(id, acao){
       if(x.s === 409){ toast(x.j.erro, true); return carrega(); }
       if(!x.j.ok){ [].forEach.call(box.querySelectorAll('button'), function(b){ b.disabled = false; }); return toast(x.j.erro || 'Não deu certo, tente de novo', true); }
       p.status = x.j.status; p.comentario = x.j.comentario;
-      tela(); dia(ABERTO);
+      fecha(); tela();
       toast(acao === 'aprovar' ? 'Post aprovado' : 'Pedido de edição enviado para a equipe');
     }, function(){
       [].forEach.call(box.querySelectorAll('button'), function(b){ b.disabled = false; });

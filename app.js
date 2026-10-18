@@ -20,9 +20,10 @@ var ROOT = "2step_financeiro";
 /* ================= ESTADO ================= */
 var DB = null, AUTH = null, MEM = false, LIGADO = false, ESCUTANDO = false;
 var EMAIL = '', PAPEL = 'admin';
+var PAPEL_OK = false;   // só mostra telas depois de saber o papel de quem entrou
 var PAPEIS = {
   admin:    { nome:'Administrador', desc:'Acesso total: financeiro, mídias e usuários', cor:'#34D399' },
-  operacao: { nome:'Operação',      desc:'Só o portal de mídias. Não vê nada do financeiro', cor:'#7C5CFF' }
+  operacao: { nome:'Operação',      desc:'Operacional e Comercial. Não vê nada do financeiro', cor:'#7C5CFF' }
 };
 var S = {
   clientes: {},
@@ -138,7 +139,7 @@ function abreApp(user){
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('dbState').innerHTML = '<span style="color:var(--mint)">●</span> ' + esc(user.email || 'conectado') +
-    '<br><span style="color:var(--mute2);font-size:10px">' + ((PAPEIS[PAPEL] || {}).nome || 'sem acesso') + '</span>';
+    '<br><span style="color:var(--mute2);font-size:10px">' + (PAPEL_OK ? ((PAPEIS[PAPEL] || {}).nome || 'sem acesso') : 'carregando...') + '</span>';
   $('dbState').title = user.email || '';
   EMAIL = user.email || '';
   if(!LIGADO){
@@ -147,12 +148,14 @@ function abreApp(user){
     DB.ref(ROOT + '/usuarios').on('value', function(snap){
       S.usuarios = snap.val() || {};
       PAPEL = papelDe(EMAIL);
+      PAPEL_OK = true;
       $('dbState').innerHTML = '<span style="color:var(--mint)">●</span> ' + esc(EMAIL) +
         '<br><span style="color:var(--mute2);font-size:10px">' + ((PAPEIS[PAPEL] || {}).nome || 'sem acesso') + '</span>';
       ligaDados();
       render();
     }, function(){
       PAPEL = 'sem-acesso';
+      PAPEL_OK = true;
       render();
     });
   }
@@ -177,7 +180,7 @@ function ligaDados(){
   ouve('config',       function(v){ S.config = Object.assign({}, S.config, v); });
 }
 function fechaApp(){
-  EMAIL = ''; PAPEL = 'admin';
+  EMAIL = ''; PAPEL = 'admin'; PAPEL_OK = false;
   $('app').classList.add('hidden');
   $('login').classList.remove('hidden');
   $('senha').value = '';
@@ -621,8 +624,10 @@ function renderNav(){
 }
 function render(){
   if($('app').classList.contains('hidden')) return;
+  /* enquanto não se sabe o papel de quem entrou, nenhuma tela aparece */
+  if(!MEM && !PAPEL_OK){ $('navList').innerHTML = ''; $('main').innerHTML = '<div class="empty" style="padding-top:120px"><b>Carregando...</b></div>'; return; }
   if(PAPEL === 'sem-acesso'){ $('navList').innerHTML = ''; $('main').innerHTML = vSemAcesso(); return; }
-  if(!podeVer(VIEW)) VIEW = primeiraTela();
+  if(!podeVer(VIEW)){ VIEW = primeiraTela(); MOD_ABERTO = moduloDe(VIEW).id; }
   renderNav();
   $('main').innerHTML = telaDe(VIEW).f();
 }
@@ -1465,7 +1470,8 @@ function tryLogin(){
 }
 function lock(){
   if(MEM){ fechaApp(); return; }
-  AUTH.signOut();
+  /* recarrega ao sair: o próximo login começa do zero, sem dados do anterior na memória */
+  AUTH.signOut().then(function(){ location.reload(); }, function(){ location.reload(); });
 }
 function boot(){
   if(MEM){

@@ -24,7 +24,7 @@ var COM_TIPOS_NOTA = { reuniao:'Reunião', ligacao:'Ligação', whatsapp:'WhatsA
 
 /* ---------- dados ---------- */
 function comLiga(){
-  if(COM.ligado || MEM || !DB || !euSouAdmin()) return;
+  if(COM.ligado || MEM || !DB || PAPEL === 'sem-acesso') return;
   COM.ligado = true;
   ouve('comercial/reunioes', function(v){ COM.r = v; });
 }
@@ -171,7 +171,8 @@ function mComFicha(id){
       return '<button class="' + ((g.etapa || 'negociacao') === e ? 'on' : '') + '" onclick="comMover(\'' + id + '\',\'' + e + '\',1)">' + COM_ETAPAS[e].n + '</button>';
     }).join('') + '</div>' +
     (g.etapa === 'fechado' ? (fin ? '<span class="pill p-on">já está no financeiro como ' + esc(fin.nome) + '</span>'
-      : '<button class="btn btn-s btn-p" onclick="comParaFinanceiro(\'' + id + '\')">Cadastrar no financeiro</button>') : '') + '</div>' +
+      : (euSouAdmin() ? '<button class="btn btn-s btn-p" onclick="comParaFinanceiro(\'' + id + '\')">Cadastrar no financeiro</button>'
+                      : '<span class="pill p-av">o administrador cadastra no financeiro</span>')) : '') + '</div>' +
 
     '<div class="card mb12" style="background:var(--slab2);border-color:' + et.cor + '55">' +
       '<div class="kpi-l">Valores acordados</div>' +
@@ -268,7 +269,7 @@ function comCopiar(id){
 /* abre o cadastro de cliente que já existe no financeiro, preenchido com o que foi acordado */
 function comParaFinanceiro(id){
   var g = COM.r[id];
-  if(!g) return;
+  if(!g || !euSouAdmin()) return;
   fecha();
   mCliente();
   function pf(campo, v){ var e = $(campo); if(e && v !== '' && v != null) e.value = v; }
@@ -407,7 +408,7 @@ function comSalvar(id){
 
 /* ---------- registro no menu: módulo Comercial, antes de Sistema ---------- */
 (function(){
-  var m = { id:'com', nome:'Comercial', sigla:'C', cor:'#FBBF24', papeis:['admin'], telas:[
+  var m = { id:'com', nome:'Comercial', sigla:'C', cor:'#FBBF24', papeis:['admin','operacao'], telas:[
     { v:'com', n:'Reuniões', f:function(){ return vCom(); }, badge:function(){ return comBadge(); } }
   ]};
   var i = -1;

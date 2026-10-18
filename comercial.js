@@ -283,6 +283,11 @@ function comParaFinanceiro(id){
   if(g.formaPagamento) obs.push('Pagamento: ' + g.formaPagamento + '.');
   if(g.condicoes) obs.push('Condições: ' + g.condicoes);
   pf('c_obs', obs.join(' '));
+  /* linhas de serviço a partir dos serviços combinados na negociação */
+  var sv = comNorm((g.servicos || []).join(' '));
+  [['c_trf', sv.indexOf('trafego') > -1], ['c_soc', sv.indexOf('social') > -1]].forEach(function(x){
+    var e = $(x[0]); if(e){ e.checked = x[1]; e.parentNode.classList.toggle('on', x[1]); }
+  });
   toast('Confira os dados e clique em Salvar cliente');
 }
 

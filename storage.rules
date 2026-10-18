@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// 2STEP · regras do Firebase Storage
+// Cole em Firebase Console > Storage > Rules e publique.
+// Só quem faz login no app sobe, lê ou apaga arquivos dos calendários.
+// O cliente vê as imagens pelo link de download de cada arquivo,
+// que tem uma chave própria e não depende destas regras.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /calendarios/{calId}/{postId}/{arquivo} {
+      allow read, delete: if request.auth != null;
+      allow create: if request.auth != null
+        && (
+          (request.resource.contentType.matches('image/.*') && request.resource.size < 30 * 1024 * 1024)
+          || (request.resource.contentType.matches('video/.*') && request.resource.size < 300 * 1024 * 1024)
+        );
+    }
+  }
+}

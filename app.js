@@ -1297,6 +1297,10 @@ function mCliente(id){
       '<div class="fg"><label class="fl">Data de encerramento</label><input type="date" class="fi" id="c_enc" value="' + (c.dataEncerramento || '') + '"></div>' +
     '</div>' +
     '<div class="fg"><label class="fl">Serviços contratados</label><input class="fi" id="c_serv" value="' + esc(c.servicos) + '" placeholder="Tráfego Meta, criativos, CRM"></div>' +
+    '<div class="fg"><label class="fl">Linhas de serviço</label><div class="fr fr2">' +
+      '<label class="chk ' + (c.trafego !== false ? 'on' : '') + '"><input type="checkbox" id="c_trf" ' + (c.trafego !== false ? 'checked' : '') + ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">Tráfego pago</label>' +
+      '<label class="chk ' + (c.socialMedia ? 'on' : '') + '"><input type="checkbox" id="c_soc" ' + (c.socialMedia ? 'checked' : '') + ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">Social media</label>' +
+    '</div><div class="hint">Com Social media marcado, o cliente aparece em Operacional › Calendário de postagens.</div></div>' +
     '<div class="fg"><label class="fl">Observações</label><textarea class="fi" id="c_obs">' + esc(c.obs) + '</textarea></div>',
     (id ? '<button class="btn btn-d" onclick="delCliente(\'' + id + '\')">Excluir</button>' : '') +
     '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="saveCliente(\'' + (id || '') + '\')">Salvar cliente</button>');
@@ -1315,6 +1319,8 @@ function saveCliente(id){
     dataAviso: $('c_aviso').value || '',
     dataEncerramento: $('c_enc').value || '',
     servicos: $('c_serv').value.trim(),
+    trafego: $('c_trf').checked,
+    socialMedia: $('c_soc').checked,
     obs: $('c_obs').value.trim(),
     custosDiretos: (id && S.clientes[id] && S.clientes[id].custosDiretos) || []
   };

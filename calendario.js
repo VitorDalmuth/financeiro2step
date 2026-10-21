@@ -11,7 +11,9 @@
    A página do cliente é aprovacao.html, servida por api/calendario.js.
    ============================================================ */
 
-var CAL = { c: {}, ligado: false, sel: '', limpou: false, enviando: false };
+var CAL = { c: {}, ligado: false, sel: '', limpou: false, enviando: false,
+            fila: [],     // arquivos escolhidos, na ordem em que vão subir
+            arr: null };  // miniatura sendo arrastada
 
 var CAL_TIPOS = {
   imagem:    { n:'Imagem',    accept:'image/*',         multi:false, ic:'▣' },
@@ -45,8 +47,20 @@ var CAL_SEM = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   '.cal-car{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px}' +
   '.cal-car>*{scroll-snap-align:start;flex:0 0 auto;height:220px;max-width:85%;border-radius:8px;background:#000;object-fit:contain}' +
   '.cal-bar{height:6px;background:var(--slab3);border-radius:6px;overflow:hidden;margin-top:8px}.cal-bar i{display:block;height:100%;background:var(--volt);transition:.2s}' +
+  '.cal-fila{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;margin-top:8px}' +
+  '.cal-fi{position:relative;aspect-ratio:1;border-radius:8px;background:#000;border:1px solid var(--line2);overflow:hidden;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}' +
+  '.cal-fi img,.cal-fi video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}' +
+  '.cal-fi b{position:absolute;top:4px;left:4px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:rgba(10,12,16,.82);color:#fff;font-family:var(--mono);font-size:11px;display:flex;align-items:center;justify-content:center}' +
+  '.cal-vd{position:absolute;top:4px;right:5px;font-size:11px;color:#fff;text-shadow:0 1px 3px #000}' +
+  '.cal-fs{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:3px}' +
+  '.cal-fs button{width:28px;height:28px;border-radius:7px;background:rgba(10,12,16,.78);color:#fff;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}' +
+  '.cal-fs button:disabled{opacity:0;pointer-events:none}' +
+  '.cal-fi.arr{z-index:5;cursor:grabbing;border-color:var(--volt);box-shadow:0 12px 28px rgba(0,0,0,.6);opacity:.94}' +
+  '.cal-fi.arr .cal-fs{display:none}' +
   '@media(max-width:820px){.cal-d{min-height:58px;padding:4px}.cal-t{grid-template-columns:1fr}.cal-t i:nth-child(n+2){display:none}.cal-h{font-size:9px;letter-spacing:0}}';
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
+  /* no celular, enquanto arrasta uma miniatura a tela não rola */
+  document.addEventListener('touchmove', function(e){ if(CAL.arr && CAL.arr.ativo) e.preventDefault(); }, { passive: false });
 })();
 
 /* ---------- dados ---------- */
@@ -354,14 +368,15 @@ function mCalDia(calId, data){
 function mCalPost(calId, data, postId){
   var cal = CAL.c[calId];
   var p = postId ? (cal.posts || {})[postId] : null;
+  calLimpaFila();
   modal((p ? 'Trocar material · ' : 'Novo post · ') + dLabel(data),
     (p && p.status === 'ajuste' && p.comentario ? '<div class="note" style="white-space:pre-wrap"><b>O cliente pediu:</b> ' + esc(p.comentario) + '</div>' : '') +
     '<div class="fg"><label class="fl">Tipo</label><div class="seg" id="k_tipos">' +
       Object.keys(CAL_TIPOS).map(function(t){
         return '<button type="button" data-t="' + t + '" class="' + ((p ? p.tipo : 'imagem') === t ? 'on' : '') + '" onclick="calEscolheTipo(\'' + t + '\')">' + CAL_TIPOS[t].n + '</button>';
       }).join('') + '</div></div>' +
-    '<div class="fg"><label class="fl">Material</label><input type="file" class="fi" id="k_arq" accept="' + CAL_TIPOS[p ? p.tipo : 'imagem'].accept + '" ' + (CAL_TIPOS[p ? p.tipo : 'imagem'].multi ? 'multiple' : '') + '>' +
-      '<div class="hint" id="k_dica">' + calDicaTipo(p ? p.tipo : 'imagem') + '</div></div>' +
+    '<div class="fg"><label class="fl">Material</label><input type="file" class="fi" id="k_arq" accept="' + CAL_TIPOS[p ? p.tipo : 'imagem'].accept + '" ' + (CAL_TIPOS[p ? p.tipo : 'imagem'].multi ? 'multiple' : '') + ' onchange="calPreparaFila()">' +
+      '<div class="hint" id="k_dica">' + calDicaTipo(p ? p.tipo : 'imagem') + '</div><div id="k_fila"></div></div>' +
     (p ? '<div class="hint">Ao salvar, o material antigo é apagado e o post volta para aprovação do cliente.</div>' : '') +
     '<div id="k_prog" class="hidden"><div style="font-size:12.5px;color:var(--mute)" id="k_prog_t">Enviando...</div><div class="cal-bar"><i id="k_prog_b" style="width:0"></i></div></div>',
     '<button class="btn" id="k_canc" onclick="mCalDia(\'' + calId + '\',\'' + data + '\')">Voltar</button>' +
@@ -371,9 +386,9 @@ function mCalPost(calId, data, postId){
 function calDicaTipo(t){
   return {
     imagem: 'Uma imagem (JPG, PNG). Até 30 MB.',
-    carrossel: 'Selecione todas as imagens de uma vez. A ordem segue o nome do arquivo: 1.jpg, 2.jpg, 3.jpg...',
+    carrossel: 'Selecione todas as imagens de uma vez. Depois é só arrastar as miniaturas para acertar a ordem.',
     reels: 'Um vídeo (MP4, MOV). Até 300 MB.',
-    stories: 'Uma ou mais imagens ou vídeos, na ordem do nome do arquivo.'
+    stories: 'Uma ou mais imagens ou vídeos. Depois é só arrastar as miniaturas para acertar a ordem.'
   }[t];
 }
 function calEscolheTipo(t){
@@ -385,12 +400,138 @@ function calEscolheTipo(t){
   a.accept = CAL_TIPOS[t].accept;
   a.multiple = CAL_TIPOS[t].multi;
   $('k_dica').textContent = calDicaTipo(t);
+  calLimpaFila(); calFilaRender();
+}
+
+/* ---------- ordem dos arquivos antes de enviar ----------
+   Ao escolher os arquivos aparecem as miniaturas numeradas. A ordem
+   começa pelo nome do arquivo e muda arrastando (no celular: segure
+   a miniatura e arraste) ou pelas setas. Mouse e toque usam os
+   mesmos Pointer Events.                                          */
+function calLimpaFila(){
+  CAL.fila.forEach(function(x){ URL.revokeObjectURL(x.url); });
+  CAL.fila = [];
+}
+function calPreparaFila(){
+  calLimpaFila();
+  CAL.fila = calOrdena($('k_arq').files).map(function(f){
+    return { file: f, url: URL.createObjectURL(f), video: /^video\//.test(f.type) };
+  });
+  calFilaRender();
+}
+function calFilaRender(){
+  var box = $('k_fila');
+  if(!box) return;
+  var fs = CAL.fila, multi = fs.length > 1;
+  box.innerHTML = !fs.length ? '' :
+    (multi ? '<div class="hint" style="margin-top:10px">Segure e arraste a miniatura (ou use as setas) para mudar a ordem. O 1 é o primeiro que o cliente vê.</div>' : '') +
+    '<div class="cal-fila">' + fs.map(function(x, i){
+      return '<div class="cal-fi" data-i="' + i + '" oncontextmenu="return false"' + (multi ? ' onpointerdown="calArrasta(event,this)"' : '') + '>' +
+        (x.video ? '<video src="' + esc(x.url) + '#t=0.1" muted playsinline preload="metadata"></video><span class="cal-vd">▶</span>'
+                 : '<img src="' + esc(x.url) + '" alt="" draggable="false">') +
+        (multi ? '<b>' + (i + 1) + '</b><div class="cal-fs">' +
+          '<button type="button" aria-label="Mover para antes" onclick="calMoveFila(' + i + ',-1)"' + (i ? '' : ' disabled') + '>‹</button>' +
+          '<button type="button" aria-label="Mover para depois" onclick="calMoveFila(' + i + ',1)"' + (i < fs.length - 1 ? '' : ' disabled') + '>›</button></div>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+}
+function calMoveFila(i, k){
+  var j = i + k;
+  if(CAL.enviando || j < 0 || j >= CAL.fila.length) return;
+  CAL.fila.splice(j, 0, CAL.fila.splice(i, 1)[0]);
+  calFilaRender();
+}
+
+/* arrastar: com mouse começa ao mexer; no toque, depois de segurar
+   um instante parado (se o dedo sair andando antes, é rolagem da tela) */
+function calArrasta(e, el){
+  if(CAL.enviando || CAL.arr || (e.target.closest && e.target.closest('button'))) return;
+  if(e.pointerType === 'mouse' && e.button !== 0) return;
+  var a = CAL.arr = { el: el, id: e.pointerId, toque: e.pointerType !== 'mouse', x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, ativo: false, t: 0, raf: 0 };
+  if(a.toque) a.t = setTimeout(calArrastaComeca, 220);
+  window.addEventListener('pointermove', calArrastaMove);
+  window.addEventListener('pointerup', calArrastaFim);
+  window.addEventListener('pointercancel', calArrastaFim);
+}
+function calArrastaComeca(){
+  var a = CAL.arr;
+  if(!a || a.ativo) return;
+  var r = a.el.getBoundingClientRect();
+  a.ativo = true;
+  a.dx = a.x - r.left; a.dy = a.y - r.top;
+  a.rola = a.el.closest('.md-b');
+  a.el.classList.add('arr');
+  try{ if(a.toque && navigator.vibrate) navigator.vibrate(12); }catch(er){}
+  calArrastaPosiciona();
+  a.raf = requestAnimationFrame(calArrastaRola);
+}
+function calArrastaMove(e){
+  var a = CAL.arr;
+  if(!a || e.pointerId !== a.id) return;
+  a.x = e.clientX; a.y = e.clientY;
+  if(!a.ativo){
+    var dist = Math.abs(a.x - a.x0) + Math.abs(a.y - a.y0);
+    if(a.toque){ if(dist > 10) calArrastaFim(); }
+    else if(dist > 5) calArrastaComeca();
+    return;
+  }
+  e.preventDefault();
+  calArrastaTroca();
+  calArrastaPosiciona();
+}
+/* a miniatura que está debaixo do dedo troca de lugar com a arrastada */
+function calArrastaTroca(){
+  var a = CAL.arr, g = a.el.parentNode, itens = [].slice.call(g.children);
+  for(var i = 0; i < itens.length; i++){
+    var o = itens[i];
+    if(o === a.el) continue;
+    var r = o.getBoundingClientRect();
+    if(a.x < r.left || a.x > r.right || a.y < r.top || a.y > r.bottom) continue;
+    g.insertBefore(a.el, i > itens.indexOf(a.el) ? o.nextSibling : o);
+    [].forEach.call(g.children, function(x, k){ var b = x.querySelector('b'); if(b) b.textContent = k + 1; });
+    return;
+  }
+}
+/* a arrastada acompanha o dedo a partir do lugar em que está agora */
+function calArrastaPosiciona(){
+  var a = CAL.arr;
+  a.el.style.transform = '';
+  var r = a.el.getBoundingClientRect();
+  a.el.style.transform = 'translate(' + (a.x - a.dx - r.left) + 'px,' + (a.y - a.dy - r.top) + 'px) scale(1.06)';
+}
+/* perto da borda de cima ou de baixo, a janela rola sozinha */
+function calArrastaRola(){
+  var a = CAL.arr;
+  if(!a || !a.ativo) return;
+  var s = a.rola;
+  if(s){
+    var r = s.getBoundingClientRect(), v = a.y < r.top + 48 ? -10 : (a.y > r.bottom - 48 ? 10 : 0);
+    if(v){
+      var antes = s.scrollTop;
+      s.scrollTop += v;
+      if(s.scrollTop !== antes){ calArrastaTroca(); calArrastaPosiciona(); }
+    }
+  }
+  a.raf = requestAnimationFrame(calArrastaRola);
+}
+function calArrastaFim(e){
+  var a = CAL.arr;
+  if(!a || (e && e.pointerId !== a.id)) return;
+  clearTimeout(a.t); cancelAnimationFrame(a.raf);
+  window.removeEventListener('pointermove', calArrastaMove);
+  window.removeEventListener('pointerup', calArrastaFim);
+  window.removeEventListener('pointercancel', calArrastaFim);
+  CAL.arr = null;
+  if(!a.ativo) return;
+  CAL.fila = [].map.call(a.el.parentNode.children, function(x){ return CAL.fila[+x.dataset.i]; });
+  /* redesenha depois do clique que o navegador dispara ao soltar */
+  setTimeout(calFilaRender, 0);
 }
 function calSalvaPost(calId, data, postId){
   if(CAL.enviando) return;
   var cal = CAL.c[calId];
   var tipo = $('k_tipos').dataset.t;
-  var files = calOrdena($('k_arq').files);
+  var files = CAL.fila.map(function(x){ return x.file; });
   var erro = calValidaArquivos(files, tipo);
   if(erro) return toast(erro, 'err');
 
@@ -426,6 +567,7 @@ function calSalvaPost(calId, data, postId){
     return save('calendarios/' + calId + '/posts/' + pid, p);
   }).then(function(){
     CAL.enviando = false;
+    calLimpaFila();
     mCalDia(calId, data); render();
     toast(antigo ? 'Material trocado. O post voltou para aprovação.' : 'Post salvo', 'ok');
   }, function(e){

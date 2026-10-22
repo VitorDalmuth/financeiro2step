@@ -31,7 +31,7 @@ var SAL_SIT = {
 };
 var SAL_ORDEM = ['baixo', 'erro', 'sem-saldo', 'novo', 'ok', 'pausado'];
 var SAL_CONTA_ST = { 2:'desativada', 3:'com pagamento pendente', 7:'em análise', 8:'em acerto', 9:'em período de carência', 100:'em encerramento', 101:'encerrada' };
-var SAL_REPETIR = [[0, 'Uma vez, até recarregar'], [6, 'A cada 6 horas'], [12, 'A cada 12 horas'], [24, 'Uma vez por dia']];
+var SAL_REPETIR = [[0, 'Uma vez, até recarregar'], [3, 'A cada 3 horas'], [6, 'A cada 6 horas'], [12, 'A cada 12 horas'], [24, 'Uma vez por dia']];
 
 /* estilos só deste módulo */
 (function(){
@@ -356,7 +356,7 @@ function salAvisos(){
   if(uv && uv.erroEnvio) out += '<div class="note"' + SAL_NOTA_RUIM + '>' +
     'A última verificação não conseguiu mandar o WhatsApp: ' + esc(uv.erroEnvio) + '</div>';
   if(SAL.zapi && (SAL.d.config || {}).canal === 'zapi' && !SAL.zapi.conectado) out += '<div class="note"' + SAL_NOTA_RUIM + '>' +
-    'O WhatsApp da Z-API está desconectado. Abra o painel da Z-API e leia o QR code de novo com o celular do número dos alertas.</div>';
+    'Os alertas não estão saindo no WhatsApp: ' + esc(salMotivoZapi(SAL.zapi)) + '</div>';
   return out;
 }
 
@@ -388,6 +388,15 @@ function salCard(c){
     '</div>';
 }
 
+/* traduz o que a Z-API respondeu para o que fazer */
+function salMotivoZapi(z){
+  var e = String(z.erro || '');
+  if(/client-token/i.test(e)) return 'a Z-API pede o token de segurança da conta. Crie a variável ZAPI_CLIENT_TOKEN na Vercel e faça o Redeploy.';
+  if(/instance|token/i.test(e)) return e + ' · Confira ZAPI_INSTANCIA e ZAPI_TOKEN na Vercel.';
+  if(e) return e;
+  if(z.conectado === false && z.celular === false) return 'o celular do chip está sem internet ou desligado. Ligue o celular e abra o WhatsApp.';
+  return 'o WhatsApp do chip não está conectado na instância. Leia o QR code de novo no painel da Z-API.';
+}
 function salCardConfig(){
   var cfg = SAL.d.config || {}, st = SAL.status, canal = cfg.canal || 'off';
   var hi = cfg.horaIni != null ? +cfg.horaIni : 7, hf = cfg.horaFim != null ? +cfg.horaFim : 22;
@@ -413,8 +422,9 @@ function salCardConfig(){
       (cfg.destinoNome ? '<div class="hint">Grupo atual: <b style="color:var(--ink)">' + esc(cfg.destinoNome) + '</b></div>' : '');
   }
   var zst = SAL.zapi ? (SAL.zapi.conectado ? '<span class="pill p-on">WhatsApp conectado</span>' : '<span class="pill p-cr">WhatsApp desconectado</span>') : '';
+  var zmot = SAL.zapi && !SAL.zapi.conectado ? '<div class="note"' + SAL_NOTA_RUIM + '><b>Motivo:</b> ' + esc(salMotivoZapi(SAL.zapi)) + '</div>' : '';
 
-  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Alerta no WhatsApp</div>' + zst + '</div><div style="padding:16px">' +
+  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Alerta no WhatsApp</div>' + zst + '</div><div style="padding:16px">' + zmot +
     '<div class="fg"><label class="fl">Canal</label><div class="seg" id="k_canal" data-t="' + canal + '">' +
       [['off', 'Desligado'], ['zapi', 'Ligado (Z-API)']].map(function(o){
         return '<button type="button" data-t="' + o[0] + '" class="' + (canal === o[0] ? 'on' : '') + '" onclick="salCanal(\'' + o[0] + '\')">' + o[1] + '</button>';

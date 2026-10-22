@@ -1,21 +1,30 @@
 /* ============================================================
    2STEP · ALERTA DE SALDO META (núcleo do servidor)
-   Usado por api/meta-saldo.js. Lê o saldo pré-pago das contas de
-   anúncio vinculadas e avisa no WhatsApp quando fica abaixo do
-   mínimo de cada conta.
+   Usado por api/meta-saldo.js e api/meta-retorno.js. Lê o saldo
+   pré-pago das contas de anúncio vinculadas e avisa no WhatsApp
+   quando fica abaixo do mínimo de cada conta.
+   ------------------------------------------------------------
+   Conexão com a Meta: pelo botão "Conectar Facebook" do painel.
+   O token fica em 2step_financeiro/metaPriv, que o app não lê;
+   vale cerca de 60 dias e o sistema avisa antes de vencer.
+   (Alternativa que não expira: META_TOKEN de usuário do sistema.)
    ------------------------------------------------------------
    Variáveis de ambiente (Vercel > Settings > Environment Variables):
-     META_TOKEN          token do usuário do sistema (Gerenciador de
-                         Negócios) com acesso às contas de anúncio
-     META_API_VERSAO     opcional, padrão v25.0
-     CRON_SECRET         senha que o agendador manda para verificar
-     ZAPI_INSTANCIA      canal Z-API: ID da instância
-     ZAPI_TOKEN          canal Z-API: token da instância
-     ZAPI_CLIENT_TOKEN   canal Z-API: token de segurança da conta (se ativado)
+     META_APP_ID            ID do app criado em developers.facebook.com
+     META_APP_SECRET        chave secreta do app
+     META_LOGIN_CONFIG_ID   ID da configuração do "Login do Facebook
+                            para Empresas" (se o app usar esse login)
+     META_TOKEN             opcional, token de usuário do sistema
+     META_API_VERSAO        opcional, padrão v25.0
+     CRON_SECRET            senha que o agendador manda para verificar
+     ZAPI_INSTANCIA         ID da instância na Z-API
+     ZAPI_TOKEN             token da instância
+     ZAPI_CLIENT_TOKEN      token de segurança da conta (se ativado)
      FIREBASE_SERVICE_ACCOUNT  (a mesma do Asaas)
    Dados em 2step_financeiro/meta:
      contas/{act_id}    -> vínculo, mínimo e última leitura
      config             -> canal, destino, horário, repetição
+     conexao            -> quem conectou e quando vence (sem o token)
      log/{id}           -> cada mensagem enviada (ou que falhou)
      ultimaVerificacao  -> resumo da última rodada
    ============================================================ */
@@ -24,7 +33,9 @@ var admin = require('firebase-admin');
 var core = require('./_asaas-core');
 
 var ref = core.ref;
+var DIAS_AVISO = 7;   /* avisa no WhatsApp quando faltar isso para a conexão vencer */
 function num(v, padrao){ var x = Number(v); return isFinite(x) && v !== '' && v != null ? x : (padrao || 0); }
+function erro(msg, http){ return Object.assign(new Error(msg), { http: http }); }
 
 /* ---------- quem chama ---------- */
 function chaveEmail(e){ return String(e || '').trim().toLowerCase().replace(/\./g, ','); }
@@ -33,13 +44,13 @@ async function exigeUsuario(req, soAdmin){
   if(soAdmin) return core.exigeAdmin(req);
   var h = String(req.headers.authorization || '');
   var tk = h.indexOf('Bearer ') === 0 ? h.slice(7) : '';
-  if(!tk) throw Object.assign(new Error('Faça login no app'), { http: 401 });
+  if(!tk) throw erro('Faça login no app', 401);
   var usuarios = (await ref('usuarios').once('value')).val();
   var u;
   try{ u = await admin.auth().verifyIdToken(tk); }
-  catch(e){ throw Object.assign(new Error('Sessão inválida, entre de novo'), { http: 401 }); }
+  catch(e){ throw erro('Sessão inválida, entre de novo', 401); }
   if(!usuarios) return u; /* mesma regra do app: sem usuários cadastrados, quem entra é admin */
-  if(!usuarios[chaveEmail(u.email)]) throw Object.assign(new Error('Seu usuário não tem acesso'), { http: 403 });
+  if(!usuarios[chaveEmail(u.email)]) throw erro('Seu usuário não tem acesso', 403);
   return u;
 }
 /* o agendador manda a senha no header (Vercel Cron) ou na URL (cron-job.org) */
@@ -51,11 +62,14 @@ function cronConfere(req){
   return esperado.length >= 16 && a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function appOk(){ return !!(process.env.META_APP_ID && process.env.META_APP_SECRET); }
 function configStatus(){
   var fb = false;
   try{ fb = !!JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}').private_key; }catch(e){}
   return {
     firebase: fb,
+    metaApp: appOk(),
+    metaLoginConfig: !!process.env.META_LOGIN_CONFIG_ID,
     metaToken: !!process.env.META_TOKEN,
     cron: String(process.env.CRON_SECRET || '').length >= 16,
     zapi: !!(process.env.ZAPI_INSTANCIA && process.env.ZAPI_TOKEN),
@@ -67,19 +81,29 @@ function configStatus(){
 /* ---------- API da Meta ---------- */
 function versao(){ return process.env.META_API_VERSAO || 'v25.0'; }
 var CAMPOS = 'id,name,account_status,currency,business_name,funding_source_details,spend_cap,amount_spent';
+var ESCOPOS = 'ads_read,ads_management,business_management';
 
 async function metaFetch(url){
   var r = await fetch(url);
   var j = await r.json().catch(function(){ return {}; });
   if(!r.ok || j.error){
-    var m = (j.error && (j.error.error_user_msg || j.error.message)) || ('respondeu ' + r.status);
-    throw new Error('Meta: ' + m);
+    var e = j.error || {};
+    var m = e.error_user_msg || e.message || ('respondeu ' + r.status);
+    /* 190 = token vencido, revogado ou senha do Facebook trocada */
+    throw Object.assign(new Error('Meta: ' + m), { expirado: e.code === 190 });
   }
   return j;
 }
-function metaUrl(caminho, params){
-  var qs = new URLSearchParams(Object.assign({}, params || {}, { access_token: process.env.META_TOKEN || '' })).toString();
+function metaUrl(caminho, params, token){
+  var qs = new URLSearchParams(Object.assign({}, params || {}, { access_token: token || '' })).toString();
   return 'https://graph.facebook.com/' + versao() + '/' + caminho + '?' + qs;
+}
+/* token do login do Facebook (guardado no banco) ou, se não houver, o do usuário do sistema */
+async function tokenAtual(){
+  var c = (await ref('metaPriv/conexao').once('value')).val();
+  if(c && c.token) return { token: c.token, conexao: c };
+  if(process.env.META_TOKEN) return { token: process.env.META_TOKEN, conexao: null };
+  throw erro('Conecte o Facebook em Operacional › Saldo Meta para ler os saldos', 400);
 }
 
 /* número escrito em pt-BR ou en-US: 1.234,56 | 1,234.56 | 123,45 | 1234 */
@@ -122,20 +146,87 @@ function resumoConta(c){
     contaStatus: num(c.account_status), saldo: s.saldo, saldoTexto: s.texto, fonte: s.fonte
   };
 }
-/* todas as contas que o token enxerga, para escolher na hora de vincular */
+/* todas as contas que a conexão enxerga, para escolher na hora de vincular:
+   as do perfil e as das BMs (inclusive de clientes) em que o perfil tem acesso */
 async function listaContas(){
-  if(!process.env.META_TOKEN) throw Object.assign(new Error('META_TOKEN não configurado na Vercel'), { http: 500 });
-  var out = [], url = metaUrl('me/adaccounts', { fields: CAMPOS, limit: 100 }), guard = 0;
-  while(url && guard++ < 20){
-    var pg = await metaFetch(url);
-    out = out.concat((pg.data || []).map(resumoConta));
-    url = pg.paging && pg.paging.next;
+  var tk = (await tokenAtual()).token;
+  var porId = {};
+  async function pagina(url){
+    var guard = 0;
+    while(url && guard++ < 20){
+      var pg = await metaFetch(url);
+      (pg.data || []).forEach(function(c){ porId[c.id] = resumoConta(c); });
+      url = pg.paging && pg.paging.next;
+    }
   }
-  return out;
+  await pagina(metaUrl('me/adaccounts', { fields: CAMPOS, limit: 100 }, tk));
+  var bms = [];
+  try{ bms = (await metaFetch(metaUrl('me/businesses', { fields: 'id,name', limit: 100 }, tk))).data || []; }
+  catch(e){ /* sem acesso às BMs: fica só com as contas do perfil */ }
+  for(var i = 0; i < bms.length && i < 50; i++){
+    var arestas = ['owned_ad_accounts', 'client_ad_accounts'];
+    for(var k = 0; k < arestas.length; k++){
+      try{ await pagina(metaUrl(bms[i].id + '/' + arestas[k], { fields: CAMPOS, limit: 100 }, tk)); }
+      catch(e){ /* BM sem permissão para listar: segue */ }
+    }
+  }
+  return Object.keys(porId).map(function(k){ return porId[k]; });
 }
-async function leConta(id){ return resumoConta(await metaFetch(metaUrl(id, { fields: CAMPOS }))); }
+async function leConta(id, tk){ return resumoConta(await metaFetch(metaUrl(id, { fields: CAMPOS }, tk))); }
 
-/* ---------- WhatsApp ---------- */
+/* ---------- login do Facebook ---------- */
+/* o endereço de volta precisa ser exatamente o cadastrado no app da Meta */
+function urlRetorno(req){ return 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || '') + '/api/meta-retorno'; }
+async function iniciaLogin(req, email){
+  if(!appOk()) throw erro('META_APP_ID e META_APP_SECRET não configurados na Vercel', 500);
+  var state = crypto.randomBytes(24).toString('hex');
+  await ref('metaPriv/oauth/' + state).set({ email: email || '', em: new Date().toISOString() });
+  var p = { client_id: process.env.META_APP_ID, redirect_uri: urlRetorno(req), state: state, response_type: 'code' };
+  if(process.env.META_LOGIN_CONFIG_ID) p.config_id = process.env.META_LOGIN_CONFIG_ID;
+  else p.scope = ESCOPOS;
+  return 'https://www.facebook.com/' + versao() + '/dialog/oauth?' + new URLSearchParams(p).toString();
+}
+async function concluiLogin(req){
+  var q = req.query || {};
+  if(q.error) throw new Error(q.error_reason === 'user_denied' ? 'Você cancelou a autorização no Facebook' : (q.error_description || 'O Facebook não autorizou'));
+  var state = String(q.state || '');
+  if(!/^[a-f0-9]{48}$/.test(state)) throw new Error('Link de retorno inválido. Clique em Conectar Facebook de novo.');
+  var stRef = ref('metaPriv/oauth/' + state), st = (await stRef.once('value')).val();
+  await stRef.remove();
+  if(!st || Date.now() - Date.parse(st.em) > 15 * 60e3) throw new Error('A conexão demorou demais. Clique em Conectar Facebook de novo.');
+  if(!appOk()) throw new Error('META_APP_ID e META_APP_SECRET não configurados na Vercel');
+
+  var id = process.env.META_APP_ID, sec = process.env.META_APP_SECRET;
+  var base = 'https://graph.facebook.com/' + versao() + '/oauth/access_token?';
+  var tk = (await metaFetch(base + new URLSearchParams({ client_id: id, client_secret: sec, redirect_uri: urlRetorno(req), code: String(q.code || '') }))).access_token;
+  /* troca pelo token de longa duração (~60 dias); se já veio longo, segue com ele */
+  try{
+    var longo = await metaFetch(base + new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: id, client_secret: sec, fb_exchange_token: tk }));
+    if(longo.access_token) tk = longo.access_token;
+  }catch(e){}
+
+  var dbg = (await metaFetch(metaUrl('debug_token', { input_token: tk }, id + '|' + sec))).data || {};
+  var escopos = dbg.scopes || [];
+  if(escopos.length && escopos.indexOf('ads_read') < 0 && escopos.indexOf('ads_management') < 0)
+    throw new Error('Faltou autorizar o acesso às contas de anúncio. Conecte de novo e aceite todas as permissões.');
+  var eu = await metaFetch(metaUrl('me', { fields: 'id,name' }, tk));
+  /* vence no que vier primeiro: o token ou o acesso aos dados */
+  var fins = [dbg.expires_at, dbg.data_access_expires_at].map(Number).filter(function(x){ return x > 0; });
+  var pub = {
+    nome: eu.name || '', fbId: eu.id || '',
+    expiraEm: fins.length ? new Date(Math.min.apply(null, fins) * 1000).toISOString() : '',
+    conectadoEm: new Date().toISOString(), conectadoPor: st.email || '', situacao: 'ok'
+  };
+  await ref('metaPriv/conexao').set(Object.assign({ token: tk }, pub));
+  await ref('meta/conexao').set(pub);
+  return pub;
+}
+async function desconecta(){
+  await ref('metaPriv/conexao').remove();
+  await ref('meta/conexao').remove();
+}
+
+/* ---------- WhatsApp (Z-API) ---------- */
 function zapiBase(){
   return 'https://api.z-api.io/instances/' + encodeURIComponent(process.env.ZAPI_INSTANCIA || '') +
     '/token/' + encodeURIComponent(process.env.ZAPI_TOKEN || '');
@@ -188,6 +279,7 @@ function dinheiro(v, moeda){
   try{ return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: moeda || 'BRL' }); }
   catch(e){ return 'R$ ' + Number(v).toFixed(2).replace('.', ','); }
 }
+function dataBR(iso){ return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }); }
 function linkRecarga(id){ return 'https://business.facebook.com/billing_hub/payment_settings/?asset_id=' + String(id).replace(/^act_/, ''); }
 function nomeCliente(c, clientes){ return ((clientes || {})[c.clienteId] || {}).nome || c.nome || c.id; }
 function msgBaixo(lista, clientes){
@@ -204,6 +296,14 @@ function msgRecarga(lista, clientes){
     return '*' + nomeCliente(c, clientes) + '*: saldo agora ' + dinheiro(c.saldo, c.moeda);
   }).join('\n');
 }
+function msgVencendo(con, dias){
+  return '🔑 *Conexão com o Facebook vence em ' + dias + ' dia' + (dias > 1 ? 's' : '') + '* (' + dataBR(con.expiraEm) + ')\n\n' +
+    'Para os alertas de saldo não pararem: painel 2STEP › Operacional › Saldo Meta › *Reconectar Facebook*.';
+}
+function msgExpirada(){
+  return '⛔ *A conexão com o Facebook expirou*\n\n' +
+    'Os saldos não estão sendo lidos e os alertas pararam. Abra o painel 2STEP › Operacional › Saldo Meta › *Reconectar Facebook*.';
+}
 
 /* ---------- a verificação ---------- */
 function horaSP(){ return Number(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false })) % 24; }
@@ -217,20 +317,61 @@ function noHorario(cfg){
 /* Regra do alerta:
    - saldo abaixo do mínimo e ainda não avisado: avisa e marca alertadoEm;
    - continua abaixo: só avisa de novo se "repetir a cada X horas" estiver ligado;
-   - voltou para o mínimo ou mais: limpa o aviso e (se ligado) manda "recarga identificada". */
+   - voltou para o mínimo ou mais: limpa o aviso e (se ligado) manda "recarga identificada".
+   Conexão do Facebook: avisa uma vez quando faltar DIAS_AVISO dias e uma vez se expirar. */
 async function verifica(origem){
   var raiz = (await ref('meta').once('value')).val() || {};
-  var cfg = raiz.config || {}, contas = raiz.contas || {};
+  var cfg = raiz.config || {}, contas = raiz.contas || {}, pub = raiz.conexao || null;
   var clientes = (await ref('clientes').once('value')).val() || {};
   var ativas = Object.keys(contas).map(function(k){ return contas[k]; }).filter(function(c){ return c && c.id && c.ativo !== false; });
   var agora = new Date().toISOString();
-  var resumo = { em: agora, origem: origem || '', total: ativas.length, baixo: 0, erros: 0, avisadas: 0, adiadas: 0, recargas: 0, erroEnvio: '' };
+  var resumo = { em: agora, origem: origem || '', total: ativas.length, baixo: 0, erros: 0, avisadas: 0, adiadas: 0, recargas: 0, erroEnvio: '', erroMeta: '' };
+  var upd = {};
+
+  var canalLigado = cfg.canal === 'zapi';
+  var podeMandar = canalLigado && noHorario(cfg);
+  async function manda(tipo, lista, texto){
+    var reg = { em: agora, tipo: tipo, canal: cfg.canal, contas: lista.map(function(c){ return { id: c.id, cliente: nomeCliente(c, clientes), saldo: c.saldo, minimo: num(c.minimo) }; }) };
+    try{ await enviaWhats(texto, cfg); reg.ok = true; }
+    catch(e){ reg.ok = false; reg.erro = String(e.message || e); resumo.erroEnvio = reg.erro; }
+    await ref('meta/log').push(reg);
+    return reg.ok;
+  }
+  async function conexaoExpirou(motivo){
+    resumo.erroMeta = motivo;
+    if(pub){
+      upd['conexao/situacao'] = 'expirada';
+      if(!pub.avisoExpiradaEm && podeMandar && await manda('conexao', [], msgExpirada())) upd['conexao/avisoExpiradaEm'] = agora;
+    }
+  }
+  async function fim(){
+    upd.ultimaVerificacao = resumo;
+    await ref('meta').update(upd);
+    return resumo;
+  }
+
+  var con;
+  try{ con = await tokenAtual(); }
+  catch(e){ resumo.erroMeta = e.message; return fim(); }
+  if(!con.conexao) pub = null;   /* usuário do sistema: não vence */
+
+  if(pub && pub.expiraEm){
+    var dias = (Date.parse(pub.expiraEm) - Date.now()) / 864e5;
+    if(dias <= 0){ await conexaoExpirou('A conexão com o Facebook expirou. Reconecte em Saldo Meta.'); return fim(); }
+    if(dias <= DIAS_AVISO && !pub.avisoVencendoEm && podeMandar && await manda('conexao', [], msgVencendo(pub, Math.ceil(dias))))
+      upd['conexao/avisoVencendoEm'] = agora;
+  }
 
   var leituras = await Promise.all(ativas.map(function(c){
-    return leConta(c.id).then(function(d){ return { c: c, d: d }; }, function(e){ return { c: c, erro: String(e.message || e) }; });
+    return leConta(c.id, con.token).then(function(d){ return { c: c, d: d }; }, function(e){ return { c: c, erro: String(e.message || e), expirado: !!e.expirado }; });
   }));
+  /* todas falharam por token inválido: a conexão caiu (senha trocada, acesso removido...) */
+  if(leituras.length && leituras.every(function(l){ return l.expirado; })){
+    await conexaoExpirou('A Meta recusou a conexão (token inválido). Reconecte o Facebook em Saldo Meta.');
+    return fim();
+  }
 
-  var upd = {}, novos = [], recarregadas = [];
+  var novos = [], recarregadas = [];
   leituras.forEach(function(l){
     var c = l.c, m = { lidoEm: agora };
     if(l.erro){ m.situacao = 'erro'; m.erro = l.erro; resumo.erros++; }
@@ -252,17 +393,7 @@ async function verifica(origem){
     Object.keys(m).forEach(function(k){ upd['contas/' + c.id + '/' + k] = m[k] === undefined ? null : m[k]; });
   });
 
-  var canalLigado = cfg.canal === 'zapi';
-  var podeMandar = canalLigado && noHorario(cfg);
   if(novos.length && canalLigado && !podeMandar) resumo.adiadas = novos.length;
-
-  async function manda(tipo, lista, texto){
-    var reg = { em: agora, tipo: tipo, canal: cfg.canal, contas: lista.map(function(c){ return { id: c.id, cliente: nomeCliente(c, clientes), saldo: c.saldo, minimo: num(c.minimo) }; }) };
-    try{ await enviaWhats(texto, cfg); reg.ok = true; }
-    catch(e){ reg.ok = false; reg.erro = String(e.message || e); resumo.erroEnvio = reg.erro; }
-    await ref('meta/log').push(reg);
-    return reg.ok;
-  }
   if(podeMandar && novos.length && await manda('baixo', novos, msgBaixo(novos, clientes))){
     novos.forEach(function(c){ upd['contas/' + c.id + '/alertadoEm'] = agora; });
     resumo.avisadas = novos.length;
@@ -270,10 +401,7 @@ async function verifica(origem){
   if(podeMandar && recarregadas.length && cfg.avisarRecarga !== false){
     if(await manda('recarga', recarregadas, msgRecarga(recarregadas, clientes))) resumo.recargas = recarregadas.length;
   }
-
-  upd.ultimaVerificacao = resumo;
-  await ref('meta').update(upd);
-  return resumo;
+  return fim();
 }
 
 async function enviaTeste(){
@@ -285,7 +413,8 @@ async function enviaTeste(){
 
 module.exports = {
   exigeUsuario: exigeUsuario, cronConfere: cronConfere, configStatus: configStatus,
-  listaContas: listaContas, leConta: leConta, zapiStatus: zapiStatus, zapiGrupos: zapiGrupos,
+  listaContas: listaContas, zapiStatus: zapiStatus, zapiGrupos: zapiGrupos,
+  iniciaLogin: iniciaLogin, concluiLogin: concluiLogin, desconecta: desconecta,
   verifica: verifica, enviaTeste: enviaTeste,
-  _numeroTexto: numeroTexto, _saldoDe: saldoDe, _msgBaixo: msgBaixo
+  _numeroTexto: numeroTexto, _saldoDe: saldoDe
 };

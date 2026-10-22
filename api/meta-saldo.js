@@ -2,14 +2,18 @@
    2STEP · ALERTA DE SALDO META
    /api/meta-saldo?acao=cron&chave=SENHA  rodada automática (agendador)
    /api/meta-saldo?acao=status            o que já está configurado
-   /api/meta-saldo?acao=contas            contas de anúncio que o token vê
+   /api/meta-saldo?acao=contas            contas de anúncio que a conexão vê
    /api/meta-saldo?acao=verificar  (POST) lê os saldos e avisa agora
+   /api/meta-saldo?acao=conectar   (POST) endereço do login do Facebook (só admin)
+   /api/meta-saldo?acao=desconectar(POST) apaga a conexão (só admin)
    /api/meta-saldo?acao=grupos            grupos da Z-API (só admin)
    /api/meta-saldo?acao=teste      (POST) mensagem de teste (só admin)
+   A volta do login do Facebook chega em api/meta-retorno.js.
    ============================================================ */
 var meta = require('./_meta-core');
 
 function erro(msg, http){ return Object.assign(new Error(msg), { http: http }); }
+function soPost(req){ if(req.method !== 'POST') throw erro('use POST', 405); }
 
 module.exports = async function(req, res){
   res.setHeader('Cache-Control', 'no-store');
@@ -20,7 +24,6 @@ module.exports = async function(req, res){
 
     if(acao === 'cron'){
       if(!meta.cronConfere(req)) return res.status(401).json({ ok: false, erro: 'senha do agendador inválida' });
-      if(!st.metaToken) throw erro('META_TOKEN não configurado na Vercel', 500);
       return res.status(200).json({ ok: true, resumo: await meta.verifica('agendado') });
     }
 
@@ -35,10 +38,20 @@ module.exports = async function(req, res){
       return res.status(200).json({ ok: true, contas: await meta.listaContas() });
     }
     if(acao === 'verificar'){
-      if(req.method !== 'POST') return res.status(405).json({ ok: false, erro: 'use POST' });
+      soPost(req);
       await meta.exigeUsuario(req);
-      if(!st.metaToken) throw erro('META_TOKEN não configurado na Vercel', 500);
       return res.status(200).json({ ok: true, resumo: await meta.verifica('manual') });
+    }
+    if(acao === 'conectar'){
+      soPost(req);
+      var u = await meta.exigeUsuario(req, true);
+      return res.status(200).json({ ok: true, url: await meta.iniciaLogin(req, u.email) });
+    }
+    if(acao === 'desconectar'){
+      soPost(req);
+      await meta.exigeUsuario(req, true);
+      await meta.desconecta();
+      return res.status(200).json({ ok: true });
     }
     if(acao === 'grupos'){
       await meta.exigeUsuario(req, true);
@@ -46,7 +59,7 @@ module.exports = async function(req, res){
       return res.status(200).json({ ok: true, grupos: await meta.zapiGrupos() });
     }
     if(acao === 'teste'){
-      if(req.method !== 'POST') return res.status(405).json({ ok: false, erro: 'use POST' });
+      soPost(req);
       await meta.exigeUsuario(req, true);
       await meta.enviaTeste();
       return res.status(200).json({ ok: true });

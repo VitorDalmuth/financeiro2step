@@ -4,7 +4,7 @@
    WhatsApp quando fica abaixo do mínimo de cada conta.
    Entra no módulo Operacional, para admin e operação. A configuração
    do WhatsApp só aparece para administradores.
-   Depende de app.js (S, DB, AUTH, MEM, EMAIL, ROOT, MODULOS, ouve,
+   Depende de app.js (S, DB, AUTH, MEM, EMAIL, ROOT, MODULOS, VIEW, MOD_ABERTO, ouve,
    save, del, render, modal, fecha, esc, n, nf, brl, kpi, dLabel,
    toast, listaClientes, euSouAdmin, $) e de asaas.js (asaSugestao).
    Dados novos: 2step_financeiro/meta (contas, config, log).
@@ -16,8 +16,10 @@ var SAL = {
   status: null, zapi: null, statusErro: '', statusPedido: false,
   contasMeta: null,   // contas que o token da Meta enxerga, quando buscadas
   grupos: null,       // grupos da Z-API, quando buscados
-  ocupado: ''         // 'verificar' | 'contas' | 'grupos' | 'teste'
+  ocupado: '',        // 'verificar' | 'contas' | 'grupos' | 'teste' | 'conectar'
+  retorno: null       // resultado da volta do login do Facebook
 };
+var SAL_DIAS_AVISO = 7;   /* a partir daqui o painel avisa que a conexão vai vencer */
 
 var SAL_SIT = {
   baixo:       { t:'Abaixo do mínimo',   pill:'p-cr' },
@@ -49,6 +51,16 @@ var SAL_REPETIR = [[0, 'Uma vez, até recarregar'], [6, 'A cada 6 horas'], [12, 
   '@media(max-width:1100px){.sal-k{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
   '@media(max-width:820px){.sal-k{gap:8px}.sal-k .card{padding:12px}.sal-k .kpi-l{font-size:9.5px;letter-spacing:.06em}.sal-k .kpi-v{font-size:20px}.sal-k .kpi-s{font-size:11px}}';
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
+})();
+
+/* volta do login do Facebook (api/meta-retorno.js manda para /?meta=ok ou /?meta=erro&msg=...):
+   abre direto em Saldo Meta e limpa o endereço */
+(function(){
+  var p = new URLSearchParams(location.search), r = p.get('meta');
+  if(!r) return;
+  SAL.retorno = { ok: r === 'ok', msg: p.get('msg') || '' };
+  VIEW = 'saldo'; MOD_ABERTO = 'mid';
+  history.replaceState(null, '', location.pathname + location.hash);
 })();
 
 /* ---------- dados ---------- */
@@ -89,6 +101,14 @@ function salDataHora(iso){
   var d = new Date(iso);
   if(isNaN(d)) return '—';
   return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+/* situação da conexão com o Facebook: '' (sem), 'ok', 'vencendo' ou 'expirada' */
+function salConexao(){
+  var c = SAL.d.conexao;
+  if(!c) return { sit: '' };
+  var dias = c.expiraEm ? (Date.parse(c.expiraEm) - Date.now()) / 864e5 : Infinity;
+  var sit = c.situacao === 'expirada' || dias <= 0 ? 'expirada' : (dias <= SAL_DIAS_AVISO ? 'vencendo' : 'ok');
+  return { sit: sit, dias: Math.max(0, Math.ceil(dias)), c: c };
 }
 function salLinkRecarga(id){ return 'https://business.facebook.com/billing_hub/payment_settings/?asset_id=' + encodeURIComponent(String(id).replace(/^act_/, '')); }
 
@@ -140,6 +160,20 @@ function salBuscaContas(){
     SAL.ocupado = ''; mSalConta();
     toast(j.contas.length + ' conta(s) encontrada(s) na Meta', 'ok');
   }, function(e){ SAL.ocupado = ''; mSalConta(); toast(e.message, 'err'); });
+}
+/* leva para o login do Facebook; na volta o servidor guarda o token e devolve para cá */
+function salConectar(){
+  if(SAL.ocupado) return;
+  if(MEM) return toast('Na demonstração não dá para conectar: precisa do Firebase', 'err');
+  SAL.ocupado = 'conectar'; render();
+  salApi('conectar', 'POST').then(function(j){ location.href = j.url; },
+    function(e){ SAL.ocupado = ''; render(); toast(e.message, 'err'); });
+}
+function salDesconectar(){
+  if(!confirm('Desconectar o Facebook?\n\nOs saldos param de ser lidos e os alertas param até alguém conectar de novo.')) return;
+  if(MEM){ delete SAL.d.conexao; render(); return; }
+  salApi('desconectar', 'POST').then(function(){ toast('Facebook desconectado'); },
+    function(e){ toast(e.message, 'err'); });
 }
 function salBuscaGrupos(){
   if(SAL.ocupado) return;
@@ -280,13 +314,17 @@ function vSaldo(){
   var soma = ativas.reduce(function(a, c){ return a + (c.saldo != null ? nf(c.saldo) : 0); }, 0);
   var uv = SAL.d.ultimaVerificacao;
   var oc = SAL.ocupado === 'verificar';
+  if(SAL.retorno){
+    var rt = SAL.retorno; SAL.retorno = null;
+    setTimeout(function(){ toast(rt.ok ? 'Facebook conectado. Já dá para buscar as contas.' : 'Não conectou: ' + rt.msg, rt.ok ? 'ok' : 'err'); }, 50);
+  }
 
   return '' +
   '<div class="hd"><div><h1>Saldo Meta</h1><p>Saldo pré-pago das contas de anúncio, com alerta no WhatsApp quando estiver acabando</p></div>' +
   '<div class="hd-act"><button class="btn" onclick="salVerifica()"' + (oc ? ' disabled style="opacity:.6"' : '') + '>' + (oc ? 'Verificando...' : 'Verificar agora') + '</button>' +
   '<button class="btn btn-p" onclick="mSalConta()">+ Vincular conta</button></div></div>' +
 
-  (MEM ? '<div class="note">Demonstração: os saldos abaixo são de exemplo. A leitura real precisa do Firebase e do token da Meta.</div>' : '') +
+  (MEM ? '<div class="note">Demonstração: os saldos abaixo são de exemplo. A leitura real precisa do Firebase e do Facebook conectado.</div>' : '') +
   salAvisos() +
 
   '<div class="grid sal-k mb12">' +
@@ -299,17 +337,25 @@ function vSaldo(){
   (cs.length ? '<div class="pg mb12">' + cs.map(salCard).join('') + '</div>' :
     '<div class="tw mb12"><div class="empty"><b>Nenhuma conta vinculada</b>Clique em <b style="display:inline;font-size:13px">+ Vincular conta</b>, escolha a conta de anúncios, o cliente e o saldo mínimo.</div></div>') +
 
-  (euSouAdmin() ? '<div class="grid g2 mb12">' + salCardConfig() + salCardAgenda() + '</div>' : '') +
+  (euSouAdmin() ? '<div class="grid g2 mb12">' + salCardConexao() + salCardConfig() + '</div>' + '<div class="mb12">' + salCardAgenda() + '</div>' : '') +
   salCardLog();
 }
 
+var SAL_NOTA_RUIM = ' style="background:var(--coral-dim);border-color:rgba(251,113,133,.35);color:#fda4af"';
+function salBotaoConectar(txt){
+  return euSouAdmin() ? ' <button class="btn btn-s btn-p" style="margin-left:6px" onclick="salConectar()"' + (SAL.ocupado === 'conectar' ? ' disabled' : '') + '>' +
+    (SAL.ocupado === 'conectar' ? 'Abrindo o Facebook...' : txt) + '</button>' : ' Peça a um administrador para ' + (txt.indexOf('Reconectar') === 0 ? 'reconectar' : 'conectar') + ' o Facebook.';
+}
 function salAvisos(){
-  var out = '', uv = SAL.d.ultimaVerificacao, st = SAL.status;
+  var out = '', uv = SAL.d.ultimaVerificacao, st = SAL.status, cx = salConexao();
   if(!MEM && SAL.statusErro && !st) out += '<div class="note">' + esc(SAL.statusErro) + '</div>';
-  if(st && !st.metaToken) out += '<div class="note">Falta o token da Meta (variável META_TOKEN na Vercel). Sem ele não dá para ler os saldos.</div>';
-  if(uv && uv.erroEnvio) out += '<div class="note" style="background:var(--coral-dim);border-color:rgba(251,113,133,.35);color:#fda4af">' +
+  if(!cx.sit && st && !st.metaToken) out += '<div class="note">Conecte o Facebook para o sistema ler os saldos das contas.' + salBotaoConectar('Conectar Facebook') + '</div>';
+  if(cx.sit === 'expirada') out += '<div class="note"' + SAL_NOTA_RUIM + '>A conexão com o Facebook expirou: os saldos não estão sendo lidos e os alertas pararam.' + salBotaoConectar('Reconectar Facebook') + '</div>';
+  if(cx.sit === 'vencendo') out += '<div class="note">A conexão com o Facebook vence em <b>' + cx.dias + ' dia' + (cx.dias > 1 ? 's' : '') + '</b> (' + dLabel(cx.c.expiraEm.slice(0, 10)) + '). Reconecte para os alertas não pararem.' + salBotaoConectar('Reconectar Facebook') + '</div>';
+  if(uv && uv.erroMeta && cx.sit !== 'expirada' && (cx.sit || (st && st.metaToken))) out += '<div class="note"' + SAL_NOTA_RUIM + '>A última verificação não conseguiu ler a Meta: ' + esc(uv.erroMeta) + '</div>';
+  if(uv && uv.erroEnvio) out += '<div class="note"' + SAL_NOTA_RUIM + '>' +
     'A última verificação não conseguiu mandar o WhatsApp: ' + esc(uv.erroEnvio) + '</div>';
-  if(SAL.zapi && (SAL.d.config || {}).canal === 'zapi' && !SAL.zapi.conectado) out += '<div class="note" style="background:var(--coral-dim);border-color:rgba(251,113,133,.35);color:#fda4af">' +
+  if(SAL.zapi && (SAL.d.config || {}).canal === 'zapi' && !SAL.zapi.conectado) out += '<div class="note"' + SAL_NOTA_RUIM + '>' +
     'O WhatsApp da Z-API está desconectado. Abra o painel da Z-API e leia o QR code de novo com o celular do número dos alertas.</div>';
   return out;
 }
@@ -393,10 +439,39 @@ function salCardConfig(){
       '<button class="btn btn-p" onclick="salSalvaConfig()">Salvar</button></div>' +
 
     (st ? '<div class="fl mt18">Configuração no servidor</div>' +
-      linha(st.metaToken, 'Token da Meta', 'Variável META_TOKEN na Vercel.') +
+      linha(st.metaApp, 'App da Meta', 'Variáveis META_APP_ID e META_APP_SECRET na Vercel.') +
+      linha(salConexao().sit === 'ok' || salConexao().sit === 'vencendo' || st.metaToken, 'Facebook conectado', 'Clique em Conectar Facebook no card de conexão.') +
       linha(st.cron, 'Senha do agendador', 'Variável CRON_SECRET na Vercel (16 caracteres ou mais).') +
       (canal === 'zapi' ? linha(st.zapi, 'Z-API', 'Variáveis ZAPI_INSTANCIA e ZAPI_TOKEN na Vercel (e ZAPI_CLIENT_TOKEN, se o token de segurança estiver ativo).') : '')
       : '') +
+    '</div></div>';
+}
+
+function salCardConexao(){
+  var cx = salConexao(), st = SAL.status, c = cx.c;
+  var retorno = location.origin + '/api/meta-retorno';
+  var pill = { ok: '<span class="pill p-on">conectado</span>', vencendo: '<span class="pill p-av">vence em breve</span>', expirada: '<span class="pill p-cr">expirada</span>' }[cx.sit] ||
+    (st && st.metaToken ? '<span class="pill p-on">usuário do sistema</span>' : '<span class="pill p-off">não conectado</span>');
+  var corpo;
+  if(c){
+    corpo = '<div style="font-size:13px;line-height:1.7">' +
+      '<div><span style="color:var(--mute)">Conta:</span> <b>' + esc(c.nome || 'Facebook') + '</b></div>' +
+      '<div><span style="color:var(--mute)">Conectado em:</span> ' + dLabel(String(c.conectadoEm).slice(0, 10)) + (c.conectadoPor ? ' por ' + esc(c.conectadoPor) : '') + '</div>' +
+      '<div><span style="color:var(--mute)">Vence em:</span> ' + (c.expiraEm ? '<b class="' + (cx.sit === 'ok' ? '' : (cx.sit === 'vencendo' ? 'warn' : 'neg')) + '">' + dLabel(c.expiraEm.slice(0, 10)) + '</b>' + (cx.sit === 'expirada' ? '' : ' (' + cx.dias + ' dias)') : 'não vence') + '</div>' +
+      '</div>' +
+      '<div class="hint">' + SAL_DIAS_AVISO + ' dias antes de vencer, o painel e o grupo do WhatsApp avisam. Reconectar é só clicar no botão e confirmar no Facebook.</div>' +
+      '<div class="flx mt12" style="justify-content:flex-end"><button class="btn btn-d" onclick="salDesconectar()">Desconectar</button>' +
+      '<button class="btn btn-p" onclick="salConectar()"' + (SAL.ocupado === 'conectar' ? ' disabled' : '') + '>' + (SAL.ocupado === 'conectar' ? 'Abrindo...' : 'Reconectar Facebook') + '</button></div>';
+  }else{
+    corpo = '<div style="font-size:13px;color:var(--mute);line-height:1.6">Entre com o Facebook que tem acesso às contas de anúncio dos clientes. O sistema passa a enxergar as mesmas contas que você vê no Gerenciador.</div>' +
+      '<div class="flx mt12" style="justify-content:flex-end"><button class="btn btn-p" onclick="salConectar()"' + (SAL.ocupado === 'conectar' || (st && !st.metaApp) ? ' disabled style="opacity:.6"' : '') + '>' +
+        (SAL.ocupado === 'conectar' ? 'Abrindo o Facebook...' : 'Conectar Facebook') + '</button></div>';
+  }
+  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Conexão com o Facebook</div>' + pill + '</div><div style="padding:16px">' + corpo +
+    (st && !st.metaApp ? '<div class="note mt12" style="margin-bottom:0">Faltam as variáveis META_APP_ID e META_APP_SECRET na Vercel (veja o guia).</div>' : '') +
+    '<div class="fl mt18">Endereço de retorno (cadastre no app da Meta)</div>' +
+    '<div class="flx" style="flex-wrap:nowrap"><input class="fi mono" style="font-size:11.5px" readonly value="' + esc(retorno) + '" onclick="this.select()">' +
+    '<button class="btn btn-s" onclick="salCopia(\'' + esc(retorno) + '\')">Copiar</button></div>' +
     '</div></div>';
 }
 
@@ -417,7 +492,7 @@ function salCardLog(){
   var lg = SAL.d.log || {};
   var itens = Object.keys(lg).map(function(k){ return lg[k]; }).filter(Boolean)
     .sort(function(a, b){ return String(b.em).localeCompare(String(a.em)); }).slice(0, 20);
-  var tipos = { baixo: ['Saldo baixo', 'p-cr'], recarga: ['Recarga', 'p-on'], teste: ['Teste', 'p-vl'] };
+  var tipos = { baixo: ['Saldo baixo', 'p-cr'], recarga: ['Recarga', 'p-on'], teste: ['Teste', 'p-vl'], conexao: ['Conexão Facebook', 'p-av'] };
   return '<div class="tw"><div class="tw-hd"><div class="tw-t">Alertas enviados</div></div>' +
     (itens.length ? itens.map(function(r){
       var t = tipos[r.tipo] || [r.tipo, 'p-off'];
@@ -445,6 +520,7 @@ function salDemo(){
       act_700800900: { id:'act_700800900', nome: cs[2].nome + ' · Ads', clienteId: cs[2].id, minimo: 100, ativo: true, saldo: 260, moeda:'BRL', lidoEm: ha(12), situacao:'ok', contaStatus: 1, fonte:'prepago' }
     },
     config: { canal:'zapi', destino:'120363000000000000-group', destinoNome:'Recargas 2STEP', horaIni: 7, horaFim: 22, repetirHoras: 0, avisarRecarga: true },
+    conexao: { nome:'Seu Facebook', conectadoEm: ha(60 * 24 * 55), expiraEm: new Date(agora + 5 * 864e5).toISOString(), situacao:'ok' },
     ultimaVerificacao: { em: ha(12), origem:'agendado', total: 3, baixo: 1, avisadas: 1 },
     log: {
       a: { em: ha(12), tipo:'baixo', ok: true, contas: [{ id:'act_100200300', cliente: cs[0].nome, saldo: 82.4, minimo: 150 }] },

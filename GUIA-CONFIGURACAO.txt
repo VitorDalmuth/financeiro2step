@@ -1,0 +1,126 @@
+2STEP · ALERTA DE SALDO META — GUIA DE CONFIGURAÇÃO
+=====================================================
+
+Siga na ordem. Os passos 1 a 6 são gratuitos; a Z-API (passo 7) é assinada
+só no fim, começando pelos 2 dias de teste.
+Onde aparecer SEU-DOMINIO, use o endereço do seu app na Vercel.
+
+
+PASSO 1 · SUBIR OS ARQUIVOS NO GITHUB
+-------------------------------------
+Arquivos novos:   saldo.js, vercel.json, api/_meta-core.js, api/meta-saldo.js
+Arquivos alterados: index.html, regras.json
+
+1. Abra https://github.com/VitorDalmuth/financeiro2step (branch main).
+2. Add file > Upload files.
+3. Arraste para a página TUDO que está dentro desta pasta, inclusive a pasta "api"
+   (o GitHub mantém a pasta e substitui os arquivos de mesmo nome).
+   Não precisa subir este guia.
+4. Mensagem do commit: "Alerta de saldo Meta"  >  Commit changes.
+A Vercel publica sozinha em 1 a 2 minutos. A tela já aparece em
+Operacional > Saldo Meta, mas só lê saldos depois dos passos seguintes.
+
+
+PASSO 2 · REGRAS DO BANCO (FIREBASE)
+------------------------------------
+1. console.firebase.google.com > projeto step-financeiro > Realtime Database > Regras.
+2. Apague o que está lá, cole o conteúdo inteiro do arquivo regras.json desta pasta.
+3. Publicar.
+(Libera o novo espaço "meta" do banco: todos da equipe veem os saldos,
+ só administradores mudam a configuração do WhatsApp.)
+
+
+PASSO 3 · ACESSO ÀS CONTAS NA META (token)
+------------------------------------------
+3.1 Criar o app
+  1. developers.facebook.com > Meus apps > Criar app.
+  2. Tipo: Empresa (Business). Vincule ao seu Gerenciador de Negócios.
+  3. No app, adicione o produto "API de Marketing" (Marketing API).
+
+3.2 Criar o usuário do sistema
+  1. business.facebook.com > Configurações do negócio > Usuários > Usuários do sistema > Adicionar.
+  2. Nome: Alerta de saldo · Função: Administrador.
+  3. Clique em "Atribuir ativos" > Contas de anúncios > marque as contas dos clientes
+     e dê controle total (gerenciar conta de anúncios).
+     Contas que são do Gerenciador do cliente aparecem aqui se a 2STEP já tem acesso
+     como parceira.
+
+3.3 Gerar o token
+  1. No usuário do sistema: Gerar novo token > escolha o app criado.
+  2. Validade: Nunca.
+  3. Permissões: ads_read e ads_management.
+  4. Copie o token (ele só aparece uma vez) e guarde para o passo 4.
+
+Contas novas no futuro: basta atribuir a conta a esse usuário do sistema (3.2, item 3).
+Não precisa gerar outro token.
+
+
+PASSO 4 · VARIÁVEIS NA VERCEL
+-----------------------------
+vercel.com > seu projeto > Settings > Environment Variables. Crie:
+
+  META_TOKEN    = o token do passo 3.3
+  CRON_SECRET   = xlLcqaIZ7vOUvkQfrsRrWQwGwjyKQv5t
+                  (senha gerada para você; pode trocar por outra com 16+ caracteres)
+
+A FIREBASE_SERVICE_ACCOUNT já existe (é a mesma do Asaas).
+
+Depois de salvar: Deployments > no último deploy, "..." > Redeploy.
+(As variáveis só valem para deploys feitos depois de criadas.)
+
+
+PASSO 5 · PRIMEIRO TESTE NO PAINEL
+----------------------------------
+1. Abra o app > Operacional > Saldo Meta.
+2. + Vincular conta > Buscar na Meta > escolha a conta > escolha o cliente >
+   saldo mínimo > Vincular.
+3. O saldo aparece no card em alguns segundos. Confira se bate com o que aparece
+   no Gerenciador de Anúncios (Cobrança > Saldo disponível).
+   Se aparecer "Sem saldo pré-pago" numa conta que é pré-paga, me mande o texto
+   que aparece no card, para eu ajustar a leitura.
+
+
+PASSO 6 · VERIFICAÇÃO AUTOMÁTICA DE HORA EM HORA (cron-job.org, grátis)
+-----------------------------------------------------------------------
+1. Crie uma conta em cron-job.org > Create cronjob.
+2. URL:  https://SEU-DOMINIO/api/meta-saldo?acao=cron&chave=xlLcqaIZ7vOUvkQfrsRrWQwGwjyKQv5t
+   (se trocou o CRON_SECRET, use a sua senha no fim da URL)
+3. Execution schedule: Every 60 minutes (ou a cada 30). Salvar.
+4. Em "Test run" deve aparecer status 200.
+Além disso, a própria Vercel roda uma verificação extra todo dia às 8h.
+Até aqui o painel já mostra os saldos atualizados; só falta o WhatsApp.
+
+
+PASSO 7 · WHATSAPP COM A Z-API (quando tudo acima estiver ok)
+-------------------------------------------------------------
+1. Comece pelos 2 dias grátis. Antes de começar, deixe o chip separado e o
+   grupo prontos, para aproveitar os 2 dias no teste.
+2. Crie uma instância e leia o QR code com o celular do CHIP SEPARADO
+   (não use o seu número pessoal).
+3. Crie o grupo no WhatsApp com você, o gestor de tráfego e o número do chip.
+4. Na Vercel, crie (dados na tela da instância na Z-API):
+     ZAPI_INSTANCIA    = ID da instância
+     ZAPI_TOKEN        = token da instância
+     ZAPI_CLIENT_TOKEN = token de segurança da conta (só se estiver ativado
+                         em Segurança, no painel da Z-API)
+   e faça Redeploy.
+5. No painel (Saldo Meta > Alerta no WhatsApp): Ligado (Z-API) > Buscar grupos >
+   escolha o grupo > Salvar > Enviar teste.
+6. Para ver um alerta de verdade durante o teste: edite uma conta e coloque o
+   mínimo acima do saldo atual > Verificar agora. O alerta chega no grupo.
+   Depois volte o mínimo para o valor certo.
+7. Funcionou nos 2 dias? Aí sim assine o plano.
+
+
+COMO O ALERTA SE COMPORTA
+-------------------------
+- Saldo abaixo do mínimo: um alerta no WhatsApp com cliente, conta, saldo e o
+  link de pagamento.
+- Continua sem recarga: não repete (ou repete a cada 6/12/24h, se você escolher).
+- Recarregou: o card volta para "Saldo ok" e chega "Recarga identificada"
+  (dá para desligar).
+- Fora do horário de envio (padrão 7h às 22h): o alerta espera e sai quando o
+  horário abrir.
+- Se o WhatsApp falhar, o painel mostra o erro e o aviso tenta de novo na
+  próxima verificação.
+- Contas abaixo do mínimo também aparecem com número vermelho no menu do painel.

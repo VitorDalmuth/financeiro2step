@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/meta-saldo?acao=cron", "schedule": "0 11 * * *" }
+  ]
+}

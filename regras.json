@@ -48,6 +48,15 @@
       "calendarios": {
         ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
         ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
+      },
+      "meta": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        "contas": {
+          ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
+        },
+        "config": {
+          ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+        }
       }
     }
   }

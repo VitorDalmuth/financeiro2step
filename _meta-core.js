@@ -244,8 +244,11 @@ async function zapiGet(caminho){
   return j;
 }
 async function zapiStatus(){
-  var j = await zapiGet('/status');
-  return { conectado: !!j.connected, celular: !!j.smartphoneConnected, erro: j.error || '' };
+  var r = await fetch(zapiBase() + '/status', { headers: zapiHeaders() });
+  var j = await r.json().catch(function(){ return null; });
+  if(!j) throw new Error('Z-API: respondeu ' + r.status);
+  /* no /status o campo "error" é só informativo: conectado, vem "You are already connected." */
+  return { conectado: !!j.connected, celular: !!j.smartphoneConnected, erro: j.connected ? '' : (j.error || j.message || '') };
 }
 /* grupos em que o número da instância está, para escolher o destino */
 async function zapiGrupos(){

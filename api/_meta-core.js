@@ -34,6 +34,7 @@ var core = require('./_asaas-core');
 
 var ref = core.ref;
 var DIAS_AVISO = 7;   /* avisa no WhatsApp quando faltar isso para a conexão vencer */
+var FOLGA_REPETIR = 10 * 60e3;   /* o agendador não roda no segundo exato: sem folga, "a cada 3h" viraria 4h */
 function num(v, padrao){ var x = Number(v); return isFinite(x) && v !== '' && v != null ? x : (padrao || 0); }
 function erro(msg, http){ return Object.assign(new Error(msg), { http: http }); }
 
@@ -243,8 +244,11 @@ async function zapiGet(caminho){
   return j;
 }
 async function zapiStatus(){
-  var j = await zapiGet('/status');
-  return { conectado: !!j.connected, celular: !!j.smartphoneConnected, erro: j.error || '' };
+  var r = await fetch(zapiBase() + '/status', { headers: zapiHeaders() });
+  var j = await r.json().catch(function(){ return null; });
+  if(!j) throw new Error('Z-API: respondeu ' + r.status);
+  /* no /status o campo "error" é só informativo: conectado, vem "You are already connected." */
+  return { conectado: !!j.connected, celular: !!j.smartphoneConnected, erro: j.connected ? '' : (j.error || j.message || '') };
 }
 /* grupos em que o número da instância está, para escolher o destino */
 async function zapiGrupos(){
@@ -384,7 +388,7 @@ async function verifica(origem){
       else if(minimo > 0 && d.saldo < minimo){
         m.situacao = 'baixo'; resumo.baixo++;
         var rep = num(cfg.repetirHoras);
-        if(!c.alertadoEm || (rep > 0 && Date.now() - Date.parse(c.alertadoEm) >= rep * 3600e3)) novos.push(Object.assign({}, c, m));
+        if(!c.alertadoEm || (rep > 0 && Date.now() - Date.parse(c.alertadoEm) >= rep * 3600e3 - FOLGA_REPETIR)) novos.push(Object.assign({}, c, m));
       }else{
         m.situacao = 'ok';
         if(c.alertadoEm){ m.alertadoEm = null; recarregadas.push(Object.assign({}, c, m)); }

@@ -20,7 +20,7 @@ function relDiv(a, b, k){ return b ? a / b * (k || 1) : null; }
 var REL_MET = {
   meta: [
     { k:'alcance',       n:'Alcance',                                 f:'int' },
-    { k:'ctr',           n:'Interação com o anúncio',                 f:'pct', calc:function(v){ return relDiv(v.cliques, v.impressoes, 100); } },
+    { k:'ctr',           n:'Interação com o anúncio',                 f:'pct', calc:function(v){ return relDiv(v.cliquesLink, v.impressoes, 100); } },
     { k:'cliquesSaida',  n:'Cliques de saída',                        f:'int' },
     { k:'leads',         n:'Leads',                                   f:'int' },
     { k:'custoLead',     n:'Custo por lead',                          f:'brl', calc:function(v){ return relDiv(v.invest, v.leads); } },
@@ -33,7 +33,6 @@ var REL_MET = {
     { k:'frequencia',    n:'Frequência',                              f:'dec', calc:function(v){ return relDiv(v.impressoes, v.alcance); } },
     { k:'cliques',       n:'Cliques (todos)',                         f:'int' },
     { k:'cliquesLink',   n:'Cliques no link',                         f:'int' },
-    { k:'ctrLink',       n:'CTR do link',                             f:'pct', calc:function(v){ return relDiv(v.cliquesLink, v.impressoes, 100); } },
     { k:'cpc',           n:'Custo por clique no link',                f:'brl', calc:function(v){ return relDiv(v.invest, v.cliquesLink); } },
     { k:'cpm',           n:'CPM',                                     f:'brl', calc:function(v){ return relDiv(v.invest, v.impressoes, 1000); } },
     { k:'compras',       n:'Compras',                                 f:'int' },

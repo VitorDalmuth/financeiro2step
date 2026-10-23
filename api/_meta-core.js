@@ -31,6 +31,7 @@
 var crypto = require('crypto');
 var admin = require('firebase-admin');
 var core = require('./_asaas-core');
+var google = require('./_google-core');
 
 var ref = core.ref;
 var DIAS_AVISO = 7;   /* avisa no WhatsApp quando faltar isso para a conexão vencer */
@@ -104,7 +105,7 @@ async function tokenAtual(){
   var c = (await ref('metaPriv/conexao').once('value')).val();
   if(c && c.token) return { token: c.token, conexao: c };
   if(process.env.META_TOKEN) return { token: process.env.META_TOKEN, conexao: null };
-  throw erro('Conecte o Facebook em Operacional › Saldo Meta para ler os saldos', 400);
+  throw erro('Conecte o Facebook em Operacional › Saldo Ads para ler os saldos da Meta', 400);
 }
 
 /* número escrito em pt-BR ou en-US: 1.234,56 | 1,234.56 | 123,45 | 1234 */
@@ -284,29 +285,38 @@ function dinheiro(v, moeda){
   catch(e){ return 'R$ ' + Number(v).toFixed(2).replace('.', ','); }
 }
 function dataBR(iso){ return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }); }
-function linkRecarga(id){ return 'https://business.facebook.com/billing_hub/payment_settings/?asset_id=' + String(id).replace(/^act_/, ''); }
+function ehGoogle(c){ return c.plataforma === 'google'; }
+function idGoogle(c){ return String(c.googleId || '').replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3'); }
+function linkRecarga(c){
+  return ehGoogle(c) ? 'https://ads.google.com/aw/billing/summary'
+    : 'https://business.facebook.com/billing_hub/payment_settings/?asset_id=' + String(c.id).replace(/^act_/, '');
+}
 function nomeCliente(c, clientes){ return ((clientes || {})[c.clienteId] || {}).nome || c.nome || c.id; }
 function msgBaixo(lista, clientes){
-  return '⚠️ *Saldo baixo na Meta*' + (lista.length > 1 ? ' (' + lista.length + ' contas)' : '') + '\n\n' +
+  return '⚠️ *Saldo baixo*' + (lista.length > 1 ? ' (' + lista.length + ' contas)' : '') + '\n\n' +
     lista.map(function(c){
-      return '*' + nomeCliente(c, clientes) + '*\n' +
-        'Conta: ' + (c.nome || c.id) + '\n' +
+      return '*' + nomeCliente(c, clientes) + '* · ' + (ehGoogle(c) ? 'Google Ads' : 'Meta Ads') + '\n' +
+        'Conta: ' + (c.nome || c.id) + (ehGoogle(c) ? ' (' + idGoogle(c) + ')' : '') + '\n' +
         'Saldo: ' + dinheiro(c.saldo, c.moeda) + ' · mínimo ' + dinheiro(c.minimo, c.moeda) + '\n' +
-        'Recarregar: ' + linkRecarga(c.id);
+        'Recarregar: ' + linkRecarga(c);
     }).join('\n\n');
 }
 function msgRecarga(lista, clientes){
   return '✅ *Recarga identificada*\n\n' + lista.map(function(c){
-    return '*' + nomeCliente(c, clientes) + '*: saldo agora ' + dinheiro(c.saldo, c.moeda);
+    return '*' + nomeCliente(c, clientes) + '* (' + (ehGoogle(c) ? 'Google' : 'Meta') + '): saldo agora ' + dinheiro(c.saldo, c.moeda);
   }).join('\n');
 }
 function msgVencendo(con, dias){
   return '🔑 *Conexão com o Facebook vence em ' + dias + ' dia' + (dias > 1 ? 's' : '') + '* (' + dataBR(con.expiraEm) + ')\n\n' +
-    'Para os alertas de saldo não pararem: painel 2STEP › Operacional › Saldo Meta › *Reconectar Facebook*.';
+    'Para os alertas de saldo não pararem: painel 2STEP › Operacional › Saldo Ads › *Reconectar Facebook*.';
 }
 function msgExpirada(){
   return '⛔ *A conexão com o Facebook expirou*\n\n' +
-    'Os saldos não estão sendo lidos e os alertas pararam. Abra o painel 2STEP › Operacional › Saldo Meta › *Reconectar Facebook*.';
+    'Os saldos da Meta não estão sendo lidos e os alertas da Meta pararam. Abra o painel 2STEP › Operacional › Saldo Ads › *Reconectar Facebook*.';
+}
+function msgGoogleCaiu(){
+  return '⛔ *A conexão com o Google caiu*\n\n' +
+    'Os saldos do Google Ads não estão sendo lidos. Abra o painel 2STEP › Operacional › Saldo Ads › *Reconectar Google*.';
 }
 
 /* ---------- a verificação ---------- */
@@ -322,14 +332,16 @@ function noHorario(cfg){
    - saldo abaixo do mínimo e ainda não avisado: avisa e marca alertadoEm;
    - continua abaixo: só avisa de novo se "repetir a cada X horas" estiver ligado;
    - voltou para o mínimo ou mais: limpa o aviso e (se ligado) manda "recarga identificada".
-   Conexão do Facebook: avisa uma vez quando faltar DIAS_AVISO dias e uma vez se expirar. */
+   Conexão do Facebook: avisa uma vez quando faltar DIAS_AVISO dias e uma vez se expirar.
+   Conexão do Google: avisa uma vez se cair. Uma plataforma fora do ar não impede a outra. */
 async function verifica(origem){
   var raiz = (await ref('meta').once('value')).val() || {};
   var cfg = raiz.config || {}, contas = raiz.contas || {}, pub = raiz.conexao || null;
   var clientes = (await ref('clientes').once('value')).val() || {};
   var ativas = Object.keys(contas).map(function(k){ return contas[k]; }).filter(function(c){ return c && c.id && c.ativo !== false; });
+  var ativasMeta = ativas.filter(function(c){ return !ehGoogle(c); }), ativasGoogle = ativas.filter(ehGoogle);
   var agora = new Date().toISOString();
-  var resumo = { em: agora, origem: origem || '', total: ativas.length, baixo: 0, erros: 0, avisadas: 0, adiadas: 0, recargas: 0, erroEnvio: '', erroMeta: '' };
+  var resumo = { em: agora, origem: origem || '', total: ativas.length, baixo: 0, erros: 0, avisadas: 0, adiadas: 0, recargas: 0, erroEnvio: '', erroMeta: '', erroGoogle: '' };
   var upd = {};
 
   var canalLigado = cfg.canal === 'zapi';
@@ -354,27 +366,51 @@ async function verifica(origem){
     return resumo;
   }
 
-  var con;
-  try{ con = await tokenAtual(); }
-  catch(e){ resumo.erroMeta = e.message; return fim(); }
-  if(!con.conexao) pub = null;   /* usuário do sistema: não vence */
-
-  if(pub && pub.expiraEm){
-    var dias = (Date.parse(pub.expiraEm) - Date.now()) / 864e5;
-    if(dias <= 0){ await conexaoExpirou('A conexão com o Facebook expirou. Reconecte em Saldo Meta.'); return fim(); }
-    if(dias <= DIAS_AVISO && !pub.avisoVencendoEm && podeMandar && await manda('conexao', [], msgVencendo(pub, Math.ceil(dias))))
-      upd['conexao/avisoVencendoEm'] = agora;
+  function lendo(c, p){
+    return p.then(function(d){ return { c: c, d: d }; }, function(e){ return { c: c, erro: String(e.message || e), expirado: !!e.expirado }; });
   }
 
-  var leituras = await Promise.all(ativas.map(function(c){
-    return leConta(c.id, con.token).then(function(d){ return { c: c, d: d }; }, function(e){ return { c: c, erro: String(e.message || e), expirado: !!e.expirado }; });
-  }));
-  /* todas falharam por token inválido: a conexão caiu (senha trocada, acesso removido...) */
-  if(leituras.length && leituras.every(function(l){ return l.expirado; })){
-    await conexaoExpirou('A Meta recusou a conexão (token inválido). Reconecte o Facebook em Saldo Meta.');
-    return fim();
+  /* Meta: sem conexão ou com ela vencida, as contas da Meta ficam como estão */
+  var leiturasMeta = [];
+  if(ativasMeta.length){
+    var con = null;
+    try{ con = await tokenAtual(); }catch(e){ resumo.erroMeta = e.message; }
+    if(con && !con.conexao) pub = null;   /* usuário do sistema: não vence */
+    if(con && pub && pub.expiraEm){
+      var dias = (Date.parse(pub.expiraEm) - Date.now()) / 864e5;
+      if(dias <= 0){ await conexaoExpirou('A conexão com o Facebook expirou. Reconecte em Saldo Ads.'); con = null; }
+      else if(dias <= DIAS_AVISO && !pub.avisoVencendoEm && podeMandar && await manda('conexao', [], msgVencendo(pub, Math.ceil(dias))))
+        upd['conexao/avisoVencendoEm'] = agora;
+    }
+    if(con){
+      leiturasMeta = await Promise.all(ativasMeta.map(function(c){ return lendo(c, leConta(c.id, con.token)); }));
+      /* todas falharam por token inválido: a conexão caiu (senha trocada, acesso removido...) */
+      if(leiturasMeta.every(function(l){ return l.expirado; })){
+        await conexaoExpirou('A Meta recusou a conexão (token inválido). Reconecte o Facebook em Saldo Ads.');
+        leiturasMeta = [];
+      }
+    }
   }
 
+  /* Google: uma autorização de acesso por rodada, lida conta a conta */
+  var leiturasGoogle = [];
+  if(ativasGoogle.length){
+    var gtk = null;
+    try{ gtk = await google.acesso(); }
+    catch(e){
+      resumo.erroGoogle = e.message;
+      var gpriv = (await ref('googlePriv/conexao').once('value')).val();
+      if(e.expirado && gpriv && !gpriv.avisoCaiuEm && podeMandar && await manda('conexao', [], msgGoogleCaiu()))
+        await ref('googlePriv/conexao/avisoCaiuEm').set(agora);
+    }
+    if(gtk) leiturasGoogle = await Promise.all(ativasGoogle.map(function(c){
+      return lendo(c, google.leSaldo(c.googleId, c.gerente, gtk).then(function(d){
+        return Object.assign({ nome: c.nome || '', empresa: '', moeda: c.moeda || 'BRL', contaStatus: 1 }, d);
+      }));
+    }));
+  }
+
+  var leituras = leiturasMeta.concat(leiturasGoogle);
   var novos = [], recarregadas = [];
   leituras.forEach(function(l){
     var c = l.c, m = { lidoEm: agora };

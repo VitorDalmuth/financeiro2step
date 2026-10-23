@@ -1,8 +1,9 @@
 /* ============================================================
    2STEP · GOOGLE ADS (tela)
    Card de conexão com o Google (login da MCC) dentro de
-   Operacional › Saldo Meta, só para administradores: lista as
-   contas de anúncio e investiga onde a API guarda o saldo pré-pago.
+   Operacional › Saldo Ads, só para administradores: lista as
+   contas de anúncio e, para diagnóstico, mostra os dados de
+   faturamento de uma conta ("Investigar saldo").
    Depende de app.js (AUTH, MEM, VIEW, MOD_ABERTO, render, modal,
    fecha, esc, brl, dLabel, toast, euSouAdmin, $) e de saldo.js
    (salCopia, SAL_NOTA_RUIM), que chama gglCard().
@@ -108,7 +109,7 @@ function mGglResultado(){
 }
 function gglCopiaResultado(){ salCopia(JSON.stringify(GGL.ultimo, null, 1)); }
 
-/* ---------- card dentro de Saldo Meta ---------- */
+/* ---------- card dentro de Saldo Ads ---------- */
 function gglCard(){
   if(!euSouAdmin()) return '';
   if(!MEM && !GGL.statusPedido) gglStatus();
@@ -149,7 +150,7 @@ function gglCard(){
       : '<div class="note mt12" style="margin-bottom:0">Nenhuma conta de anúncio encontrada nessa conta Google.</div>';
   }
 
-  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Google Ads <span class="pill p-vl" style="margin-left:6px">em teste</span></div>' + pill + '</div><div style="padding:16px">' +
+  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Conexão com o Google Ads</div>' + pill + '</div><div style="padding:16px">' +
     (GGL.statusErro && !st ? '<div class="note">' + esc(GGL.statusErro) + '</div>' : '') +
     corpo + contas +
     (st && !st.app ? '<div class="note mt12" style="margin-bottom:0">Faltam as variáveis GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET na Vercel (veja o guia).</div>' : '') +

@@ -15,6 +15,8 @@ var SAL = {
   d: {}, ligado: false,
   status: null, zapi: null, statusErro: '', statusPedido: false,
   contasMeta: null,   // contas que o token da Meta enxerga, quando buscadas
+  contasGoogle: null, // contas que a conexão Google enxerga, quando buscadas
+  plat: 'meta',       // plataforma escolhida ao vincular conta nova
   grupos: null,       // grupos da Z-API, quando buscados
   ocupado: '',        // 'verificar' | 'contas' | 'grupos' | 'teste' | 'conectar'
   retorno: null       // resultado da volta do login do Facebook
@@ -47,6 +49,8 @@ var SAL_REPETIR = [[0, 'Uma vez, até recarregar'], [3, 'A cada 3 horas'], [6, '
   '.sal-l{display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);align-items:flex-start}' +
   '.sal-l:last-child{border-bottom:none}' +
   '.sal-l .mono{font-size:11.5px;color:var(--mute);white-space:nowrap;padding-top:2px}' +
+  '.sal-pf{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:5px;margin-right:6px;vertical-align:1px}' +
+  '.sal-pf.m{background:rgba(8,102,255,.16);color:#6ea8ff}.sal-pf.g{background:rgba(251,188,5,.15);color:#fbbc05}' +
   '.sal-k{grid-template-columns:repeat(4,minmax(0,1fr))}' +
   '@media(max-width:1100px){.sal-k{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
   '@media(max-width:820px){.sal-k{gap:8px}.sal-k .card{padding:12px}.sal-k .kpi-l{font-size:9.5px;letter-spacing:.06em}.sal-k .kpi-v{font-size:20px}.sal-k .kpi-s{font-size:11px}}';
@@ -54,7 +58,7 @@ var SAL_REPETIR = [[0, 'Uma vez, até recarregar'], [3, 'A cada 3 horas'], [6, '
 })();
 
 /* volta do login do Facebook (api/meta-retorno.js manda para /?meta=ok ou /?meta=erro&msg=...):
-   abre direto em Saldo Meta e limpa o endereço */
+   abre direto em Saldo Ads e limpa o endereço */
 (function(){
   var p = new URLSearchParams(location.search), r = p.get('meta');
   if(!r) return;
@@ -110,7 +114,12 @@ function salConexao(){
   var sit = c.situacao === 'expirada' || dias <= 0 ? 'expirada' : (dias <= SAL_DIAS_AVISO ? 'vencendo' : 'ok');
   return { sit: sit, dias: Math.max(0, Math.ceil(dias)), c: c };
 }
-function salLinkRecarga(id){ return 'https://business.facebook.com/billing_hub/payment_settings/?asset_id=' + encodeURIComponent(String(id).replace(/^act_/, '')); }
+function salIdGoogle(id){ return String(id || '').replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3'); }
+function salIdTela(c){ return c.plataforma === 'google' ? salIdGoogle(c.googleId) : c.id; }
+function salLinkRecarga(c){
+  return c.plataforma === 'google' ? 'https://ads.google.com/aw/billing/summary'
+    : 'https://business.facebook.com/billing_hub/payment_settings/?asset_id=' + encodeURIComponent(String(c.id).replace(/^act_/, ''));
+}
 
 /* grava só os campos passados, sem apagar o que o servidor leu */
 function salUpd(id, mud){
@@ -185,13 +194,36 @@ function salBuscaGrupos(){
 }
 
 /* ---------- vincular / editar conta ---------- */
+function salPlat(p){ SAL.plat = p; mSalConta(); }
+function salCampoGoogle(ja){
+  var lista = SAL.contasGoogle;
+  if(lista){
+    var livres = lista.filter(function(x){ return !ja['g_' + x.id]; });
+    return '<select class="fi" id="m_conta" onchange="salSugereCliente(this.value)"><option value="">' + (livres.length ? 'Escolha a conta' : 'Todas as contas já estão vinculadas') + '</option>' +
+      livres.map(function(x){ return '<option value="' + esc(x.id + '|' + (x.gerente || '')) + '">' + esc(x.nome || x.id) + ' · ' + esc(salIdGoogle(x.id)) + '</option>'; }).join('') + '</select>' +
+      '<div class="hint">' + lista.length + ' conta(s) do Google Ads que a conexão Google enxerga.</div>';
+  }
+  return '<div class="flx" style="flex-wrap:nowrap"><input class="fi mono" id="m_conta" placeholder="414-657-2896" autocomplete="off">' +
+    '<button class="btn" type="button" onclick="salBuscaContasGoogle()"' + (SAL.ocupado === 'contasG' ? ' disabled' : '') + '>' + (SAL.ocupado === 'contasG' ? 'Buscando...' : 'Buscar no Google') + '</button></div>' +
+    '<div class="hint">Busque as contas no Google ou cole o ID da conta (aparece no topo do Google Ads, ex. 414-657-2896).</div>';
+}
+function salBuscaContasGoogle(){
+  if(SAL.ocupado) return;
+  if(typeof gglApi !== 'function') return toast('Recarregue a página (Ctrl + Shift + R)', 'err');
+  SAL.ocupado = 'contasG'; mSalConta();
+  gglApi('contas').then(function(j){ SAL.contasGoogle = j.contas; SAL.ocupado = ''; mSalConta(); toast(j.contas.length + ' conta(s) encontrada(s) no Google', 'ok'); },
+    function(e){ SAL.ocupado = ''; mSalConta(); toast(e.message, 'err'); });
+}
 function mSalConta(id){
   var c = id ? salConta(id) : null;
   var ja = SAL.d.contas || {};
   var lista = SAL.contasMeta;
+  var plat = c ? (c.plataforma === 'google' ? 'google' : 'meta') : (SAL.plat || 'meta');
   var campoConta;
   if(c){
-    campoConta = '<div class="fi" style="background:var(--slab3)">' + esc(c.nome || 'Conta de anúncios') + ' <span class="mono" style="color:var(--mute);font-size:12px">' + esc(c.id) + '</span></div>';
+    campoConta = '<div class="fi" style="background:var(--slab3)">' + esc(c.nome || 'Conta de anúncios') + ' <span class="mono" style="color:var(--mute);font-size:12px">' + esc(salIdTela(c)) + '</span></div>';
+  }else if(plat === 'google'){
+    campoConta = salCampoGoogle(ja);
   }else if(lista){
     var livres = lista.filter(function(x){ return !ja[x.id]; });
     campoConta = '<select class="fi" id="m_conta" onchange="salSugereCliente(this.value)"><option value="">' + (livres.length ? 'Escolha a conta' : 'Todas as contas já estão vinculadas') + '</option>' +
@@ -208,6 +240,10 @@ function mSalConta(id){
     .sort(function(a, b){ return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
 
   modal(c ? 'Editar conta' : 'Vincular conta de anúncios',
+    (c ? '' : '<div class="fg"><label class="fl">Plataforma</label><div class="seg">' +
+      [['meta', 'Meta Ads'], ['google', 'Google Ads']].map(function(o){
+        return '<button type="button" class="' + (plat === o[0] ? 'on' : '') + '" onclick="salPlat(\'' + o[0] + '\')">' + o[1] + '</button>';
+      }).join('') + '</div></div>') +
     '<div class="fg"><label class="fl">Conta de anúncios</label>' + campoConta + '</div>' +
     '<div class="fg"><label class="fl">Cliente</label><select class="fi" id="m_cli"><option value="">Escolha o cliente</option>' +
       cs.map(function(x){ return '<option value="' + esc(x.id) + '"' + (c && c.clienteId === x.id ? ' selected' : '') + '>' + esc(x.nome) + '</option>'; }).join('') + '</select></div>' +
@@ -222,17 +258,26 @@ function mSalConta(id){
 }
 /* ao escolher a conta, sugere o cliente pelo nome (só sugere: dá para trocar) */
 function salSugereCliente(id){
-  var x = (SAL.contasMeta || []).filter(function(k){ return k.id === id; })[0];
+  var x = (SAL.contasMeta || []).filter(function(k){ return k.id === id; })[0] ||
+          (SAL.contasGoogle || []).filter(function(k){ return k.id === String(id).split('|')[0]; })[0];
   var sel = $('m_cli');
   if(!x || !sel || sel.value) return;
   var sug = asaSugestao(x.nome) || asaSugestao(x.empresa);
   if(sug) sel.value = sug.id;
 }
 function salSalvaConta(id){
-  var cid = id || String(($('m_conta') || {}).value || '').trim().replace(/\s/g, '');
+  var bruto = String(($('m_conta') || {}).value || '').trim().replace(/\s/g, '');
+  var google = !id && SAL.plat === 'google', gid = '', gerente = '';
+  var cid = id || bruto;
   if(!cid) return toast('Escolha a conta de anúncios', 'err');
-  if(/^\d+$/.test(cid)) cid = 'act_' + cid;
-  if(!/^act_\d{5,25}$/.test(cid)) return toast('ID da conta inválido. Use o formato act_1234567890', 'err');
+  if(google){
+    gid = bruto.split('|')[0].replace(/\D/g, ''); gerente = (bruto.split('|')[1] || '').replace(/\D/g, '');
+    if(!/^\d{10}$/.test(gid)) return toast('ID da conta Google inválido. Use o formato 414-657-2896', 'err');
+    cid = 'g_' + gid;
+  }else if(!id){
+    if(/^\d+$/.test(cid)) cid = 'act_' + cid;
+    if(!/^act_\d{5,25}$/.test(cid)) return toast('ID da conta inválido. Use o formato act_1234567890', 'err');
+  }
   if(!id && salConta(cid)) return toast('Essa conta já está vinculada', 'err');
   var cli = $('m_cli').value;
   if(!cli) return toast('Escolha o cliente', 'err');
@@ -247,9 +292,11 @@ function salSalvaConta(id){
     fecha(); render(); toast('Conta atualizada', 'ok');
     return;
   }
-  var info = (SAL.contasMeta || []).filter(function(x){ return x.id === cid; })[0] || {};
+  var info = (google ? (SAL.contasGoogle || []).filter(function(x){ return x.id === gid; })[0]
+                     : (SAL.contasMeta || []).filter(function(x){ return x.id === cid; })[0]) || {};
   var nova = { id: cid, nome: info.nome || '', clienteId: cli, minimo: min, ativo: true,
                vinculadoEm: new Date().toISOString(), vinculadoPor: EMAIL || '' };
+  if(google){ nova.plataforma = 'google'; nova.googleId = gid; nova.gerente = gerente || info.gerente || ''; nova.moeda = info.moeda || 'BRL'; }
   (SAL.d.contas = SAL.d.contas || {})[cid] = nova;
   save('meta/contas/' + cid, nova);
   fecha(); render();
@@ -320,7 +367,7 @@ function vSaldo(){
   }
 
   return '' +
-  '<div class="hd"><div><h1>Saldo Meta</h1><p>Saldo pré-pago das contas de anúncio, com alerta no WhatsApp quando estiver acabando</p></div>' +
+  '<div class="hd"><div><h1>Saldo Ads</h1><p>Saldo pré-pago das contas de Meta Ads e Google Ads, com alerta no WhatsApp quando estiver acabando</p></div>' +
   '<div class="hd-act"><button class="btn" onclick="salVerifica()"' + (oc ? ' disabled style="opacity:.6"' : '') + '>' + (oc ? 'Verificando...' : 'Verificar agora') + '</button>' +
   '<button class="btn btn-p" onclick="mSalConta()">+ Vincular conta</button></div></div>' +
 
@@ -355,6 +402,7 @@ function salAvisos(){
   if(cx.sit === 'expirada') out += '<div class="note"' + SAL_NOTA_RUIM + '>A conexão com o Facebook expirou: os saldos não estão sendo lidos e os alertas pararam.' + salBotaoConectar('Reconectar Facebook') + '</div>';
   if(cx.sit === 'vencendo') out += '<div class="note">A conexão com o Facebook vence em <b>' + cx.dias + ' dia' + (cx.dias > 1 ? 's' : '') + '</b> (' + dLabel(cx.c.expiraEm.slice(0, 10)) + '). Reconecte para os alertas não pararem.' + salBotaoConectar('Reconectar Facebook') + '</div>';
   if(uv && uv.erroMeta && cx.sit !== 'expirada' && (cx.sit || (st && st.metaToken))) out += '<div class="note"' + SAL_NOTA_RUIM + '>A última verificação não conseguiu ler a Meta: ' + esc(uv.erroMeta) + '</div>';
+  if(uv && uv.erroGoogle) out += '<div class="note"' + SAL_NOTA_RUIM + '>A última verificação não conseguiu ler o Google Ads: ' + esc(uv.erroGoogle) + '</div>';
   if(uv && uv.erroEnvio) out += '<div class="note"' + SAL_NOTA_RUIM + '>' +
     'A última verificação não conseguiu mandar o WhatsApp: ' + esc(uv.erroEnvio) + '</div>';
   if(SAL.zapi && (SAL.d.config || {}).canal === 'zapi' && !SAL.zapi.conectado) out += '<div class="note"' + SAL_NOTA_RUIM + '>' +
@@ -378,14 +426,15 @@ function salCard(c){
   return '<div class="card sal-c ' + s + '">' +
     '<div class="flx sp" style="align-items:flex-start;flex-wrap:nowrap;gap:8px"><div style="min-width:0">' +
       '<div class="sal-n">' + esc(salCliente(c)) + '</div>' +
-      '<div class="sal-s">' + esc(c.nome || 'Conta de anúncios') + ' · <span class="mono">' + esc(c.id) + '</span></div></div>' +
+      '<div class="sal-s"><span class="sal-pf ' + (c.plataforma === 'google' ? 'g' : 'm') + '">' + (c.plataforma === 'google' ? 'Google' : 'Meta') + '</span>' +
+        esc(c.nome || 'Conta de anúncios') + ' · <span class="mono">' + esc(salIdTela(c)) + '</span></div></div>' +
       '<span class="pill ' + si.pill + '">' + si.t + '</span></div>' +
     '<div class="sal-v' + (s === 'baixo' ? ' neg' : '') + '">' + (tem ? brl(saldo) : '—') + '</div>' +
     '<div class="bar" style="margin-top:10px"><i style="width:' + pct + '%;background:' + cor + '"></i></div>' +
     '<div class="sub" style="margin-top:8px">Mínimo <b style="color:var(--ink)" class="mono">' + brl(min) + '</b> · ' + (c.lidoEm ? 'lido ' + salHa(c.lidoEm) : 'ainda não lido') + '</div>' +
     extra +
     '<div class="sal-a">' +
-      '<a class="btn btn-s" href="' + esc(salLinkRecarga(c.id)) + '" target="_blank" rel="noopener">Recarregar ↗</a>' +
+      '<a class="btn btn-s" href="' + esc(salLinkRecarga(c)) + '" target="_blank" rel="noopener">Recarregar ↗</a>' +
       '<button class="btn btn-s" onclick="mSalConta(\'' + esc(c.id) + '\')">Editar</button></div>' +
     '</div>';
 }
@@ -529,7 +578,8 @@ function salDemo(){
     contas: {
       act_100200300: { id:'act_100200300', nome: cs[0].nome + ' · Ads', clienteId: cs[0].id, minimo: 150, ativo: true, saldo: 82.4, moeda:'BRL', lidoEm: ha(12), situacao:'baixo', alertadoEm: ha(12), contaStatus: 1, fonte:'prepago' },
       act_400500600: { id:'act_400500600', nome: cs[1].nome + ' · Ads', clienteId: cs[1].id, minimo: 200, ativo: true, saldo: 1240.9, moeda:'BRL', lidoEm: ha(12), situacao:'ok', contaStatus: 1, fonte:'prepago' },
-      act_700800900: { id:'act_700800900', nome: cs[2].nome + ' · Ads', clienteId: cs[2].id, minimo: 100, ativo: true, saldo: 260, moeda:'BRL', lidoEm: ha(12), situacao:'ok', contaStatus: 1, fonte:'prepago' }
+      act_700800900: { id:'act_700800900', nome: cs[2].nome + ' · Ads', clienteId: cs[2].id, minimo: 100, ativo: true, saldo: 260, moeda:'BRL', lidoEm: ha(12), situacao:'ok', contaStatus: 1, fonte:'prepago' },
+      g_4146572896: { id:'g_4146572896', plataforma:'google', googleId:'4146572896', gerente:'', nome: cs[0].nome + ' [CONTA 02]', clienteId: cs[0].id, minimo: 150, ativo: true, saldo: 206.23, moeda:'BRL', lidoEm: ha(12), situacao:'ok', contaStatus: 1, fonte:'google' }
     },
     config: { canal:'zapi', destino:'120363000000000000-group', destinoNome:'Recargas 2STEP', horaIni: 7, horaFim: 22, repetirHoras: 0, avisarRecarga: true },
     conexao: { nome:'Seu Facebook', conectadoEm: ha(60 * 24 * 55), expiraEm: new Date(agora + 5 * 864e5).toISOString(), situacao:'ok' },
@@ -541,8 +591,8 @@ function salDemo(){
   };
 }
 
-/* ---------- registro no menu: Operacional › Saldo Meta ---------- */
+/* ---------- registro no menu: Operacional › Saldo Ads ---------- */
 (function(){
   var m = MODULOS.filter(function(x){ return x.id === 'mid'; })[0];
-  if(m) m.telas.push({ v:'saldo', n:'Saldo Meta', f:function(){ return vSaldo(); }, badge:function(){ return salBadge(); } });
+  if(m) m.telas.push({ v:'saldo', n:'Saldo Ads', f:function(){ return vSaldo(); }, badge:function(){ return salBadge(); } });
 })();

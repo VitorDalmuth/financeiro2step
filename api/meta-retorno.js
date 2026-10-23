@@ -3,7 +3,7 @@
    Endereço para cadastrar no app da Meta (URI de redirecionamento):
      https://SEU-DOMINIO/api/meta-retorno
    Troca o código pelo token, guarda no servidor e devolve a pessoa
-   para o painel, em Operacional › Saldo Meta.
+   para o painel, em Operacional › Saldo Ads.
    ============================================================ */
 var meta = require('./_meta-core');
 

@@ -79,14 +79,14 @@ async function desconecta(){ await ref('googlePriv/conexao').remove(); }
 /* token de acesso de 1 hora, gerado a partir da autorização permanente */
 async function acesso(){
   var c = (await ref('googlePriv/conexao').once('value')).val();
-  if(!c || !c.refreshToken) throw erro('Conecte o Google em Operacional › Saldo Meta', 400);
+  if(!c || !c.refreshToken) throw erro('Conecte o Google em Operacional › Saldo Ads', 400);
   try{
     return (await tokenPost({ client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET,
                               refresh_token: c.refreshToken, grant_type: 'refresh_token' })).access_token;
   }catch(e){
     if(e.expirado){
       await ref('googlePriv/conexao/situacao').set('expirada');
-      throw erro('A conexão com o Google caiu (autorização revogada ou app em modo Teste). Clique em Reconectar Google.', 400);
+      throw Object.assign(erro('A conexão com o Google caiu (autorização revogada ou app em modo Teste). Clique em Reconectar Google.', 400), { expirado: true });
     }
     throw e;
   }
@@ -142,6 +142,30 @@ async function listaContas(){
   var lista = Object.keys(porId).map(function(k){ return porId[k]; });
   if(!lista.length && erros.length) throw new Error(erros[0]);
   return lista.sort(function(a, b){ return a.nome.localeCompare(b.nome, 'pt-BR'); });
+}
+
+/* ---------- saldo pré-pago ----------
+   O Google guarda o pré-pago como "orçamento da conta": cada Pix aumenta
+   o limite; fundos disponíveis = limite ajustado − valor já veiculado.
+   Vale o orçamento aprovado que está em vigor agora. */
+function agoraSP(){ return new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace('T', ' '); }
+async function leSaldo(cid, gerente, tk){
+  cid = soDigitos(cid);
+  var rows = await gaql(cid, 'SELECT account_budget.status, account_budget.approved_start_date_time, account_budget.approved_end_date_time, ' +
+    'account_budget.approved_end_time_type, account_budget.approved_spending_limit_micros, account_budget.approved_spending_limit_type, ' +
+    "account_budget.adjusted_spending_limit_micros, account_budget.amount_served_micros FROM account_budget WHERE account_budget.status = 'APPROVED'",
+    tk, soDigitos(gerente) || mcc() || cid);
+  var agora = agoraSP();
+  var bs = rows.map(function(r){ return r.accountBudget || {}; })
+    .sort(function(a, b){ return String(b.approvedStartDateTime || '').localeCompare(String(a.approvedStartDateTime || '')); });
+  var vigente = bs.filter(function(b){
+    return String(b.approvedStartDateTime || '') <= agora &&
+      (b.approvedEndTimeType === 'FOREVER' || !b.approvedEndDateTime || String(b.approvedEndDateTime) > agora);
+  })[0];
+  if(!vigente) return { saldo: null, saldoTexto: bs.length ? 'Nenhum orçamento da conta em vigor agora' : 'A conta não usa pagamento manual (sem orçamento da conta)', fonte: '' };
+  if(vigente.approvedSpendingLimitType === 'INFINITE') return { saldo: null, saldoTexto: 'Orçamento da conta sem limite', fonte: '' };
+  var limite = Number(vigente.adjustedSpendingLimitMicros != null ? vigente.adjustedSpendingLimitMicros : vigente.approvedSpendingLimitMicros);
+  return { saldo: Math.round((limite - Number(vigente.amountServedMicros || 0)) / 1e4) / 100, saldoTexto: 'Fundos disponíveis (orçamento da conta)', fonte: 'google' };
 }
 
 /* ---------- investigação do saldo ----------
@@ -208,5 +232,6 @@ async function investiga(cid, gerente){
 
 module.exports = {
   configStatus: configStatus, iniciaLogin: iniciaLogin, concluiLogin: concluiLogin,
-  conexaoPublica: conexaoPublica, desconecta: desconecta, listaContas: listaContas, investiga: investiga
+  conexaoPublica: conexaoPublica, desconecta: desconecta, listaContas: listaContas, investiga: investiga,
+  acesso: acesso, leSaldo: leSaldo
 };

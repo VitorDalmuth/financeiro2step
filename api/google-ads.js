@@ -1,5 +1,5 @@
 /* ============================================================
-   2STEP · GOOGLE ADS (só administradores)
+   2STEP · GOOGLE ADS (só administradores, menos "contas")
    /api/google-ads?acao=status              conexão e configuração
    /api/google-ads?acao=conectar     (POST) endereço do login Google
    /api/google-ads?acao=desconectar  (POST) apaga a conexão
@@ -19,7 +19,8 @@ module.exports = async function(req, res){
   var st = google.configStatus();
   try{
     if(!meta.configStatus().firebase) throw erro('FIREBASE_SERVICE_ACCOUNT não configurada na Vercel', 500);
-    var u = await meta.exigeUsuario(req, true);
+    /* listar contas para vincular: toda a equipe; o resto: só administradores */
+    var u = await meta.exigeUsuario(req, acao !== 'contas');
 
     if(acao === 'status') return res.status(200).json({ ok: true, status: st, conexao: await google.conexaoPublica() });
     if(acao === 'conectar'){

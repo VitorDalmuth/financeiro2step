@@ -50,30 +50,43 @@ function visitasPerfil(lista){
   return (lista || []).filter(function(x){ return RE_PERFIL.test(x.action_type); })
     .reduce(function(m, x){ return Math.max(m, Number(x.value) || 0); }, 0);
 }
-/* Em campanha de Tráfego com destino "Perfil do Instagram" as visitas vêm como
-   RESULTADO da campanha (campo "results"), não na lista de ações. Lê por campanha
-   e soma os resultados de visita ao perfil. Se o campo não existir, segue sem ele. */
-async function resultadosPerfil(actId, inicio, fim, tk){
+/* Lê campanha por campanha o RESULTADO (campo "results") e o investimento.
+   - Em Tráfego com destino "Perfil do Instagram" as visitas só aparecem aqui.
+   - Os custos por resultado usam só o investimento das campanhas daquele
+     resultado (igual ao Gerenciador): uma campanha de engajamento na mesma
+     conta não encarece o custo por visita, por lead ou por conversa.
+   Se o campo não existir, segue sem ele (os custos usam o investimento total). */
+var RE_CONVERSA = /messaging_conversation_started/i;
+var RE_LEAD = /(^|[.:_])lead($|_grouped)|fb_pixel_lead/i;
+async function resultadosCampanhas(actId, inicio, fim, tk){
+  var out = { visitas: 0, investPerfil: 0, investConversas: 0, investLeads: 0, bruto: '' };
   try{
     var j = await meta.metaFetch(meta.metaUrl(actId + '/insights', {
-      fields: 'campaign_name,objective,results', level: 'campaign', limit: 200,
+      fields: 'campaign_name,objective,spend,results', level: 'campaign', limit: 200,
       time_range: JSON.stringify({ since: inicio, until: fim })
     }, tk));
-    var total = 0;
     (j.data || []).forEach(function(c){
+      var gasto = Number(c.spend) || 0, tipos = {};
       (c.results || []).forEach(function(r){
-        if(RE_PERFIL.test(String(r.indicator || ''))) total += Number(((r.values || [])[0] || {}).value) || 0;
+        var ind = String(r.indicator || '');
+        if(RE_PERFIL.test(ind)){ tipos.perfil = 1; out.visitas += Number(((r.values || [])[0] || {}).value) || 0; }
+        else if(RE_CONVERSA.test(ind)) tipos.conversa = 1;
+        else if(RE_LEAD.test(ind)) tipos.lead = 1;
       });
+      if(tipos.perfil) out.investPerfil += gasto;
+      if(tipos.conversa) out.investConversas += gasto;
+      if(tipos.lead) out.investLeads += gasto;
     });
-    return { total: total, bruto: JSON.stringify(j.data || []).slice(0, 4000) };
-  }catch(e){ return { total: 0, bruto: 'erro: ' + e.message }; }
+    out.bruto = JSON.stringify(j.data || []).slice(0, 4000);
+  }catch(e){ out.bruto = 'erro: ' + e.message; }
+  return out;
 }
 async function leMeta(actId, inicio, fim, tk, diag){
   var j = await meta.metaFetch(meta.metaUrl(actId + '/insights', {
     fields: CAMPOS_META, level: 'account', time_range: JSON.stringify({ since: inicio, until: fim })
   }, tk));
   var d = (j.data || [])[0] || {};
-  var res = await resultadosPerfil(actId, inicio, fim, tk);
+  var res = await resultadosCampanhas(actId, inicio, fim, tk);
   /* guarda o que a Meta devolveu, para conferência no relatório */
   if(diag) diag.push({
     conta: actId,
@@ -87,7 +100,8 @@ async function leMeta(actId, inicio, fim, tk, diag){
     cliquesSaida: (d.outbound_clicks || []).reduce(function(a, x){ return a + (Number(x.value) || 0); }, 0),
     conversas: acao(d.actions, ACOES.conversas), leads: acao(d.actions, ACOES.leads),
     compras: acao(d.actions, ACOES.compras), valorCompras: acao(d.action_values, ACOES.compras),
-    engajamento: acao(d.actions, ACOES.engajamento), visitasPerfil: Math.max(visitasPerfil(d.actions), res.total),
+    engajamento: acao(d.actions, ACOES.engajamento), visitasPerfil: Math.max(visitasPerfil(d.actions), res.visitas),
+    investPerfil: res.investPerfil, investConversas: res.investConversas, investLeads: res.investLeads,
     thruplay: ((d.video_thruplay_watched_actions || [])[0] || {}).value ? Number(d.video_thruplay_watched_actions[0].value) : 0
   };
 }

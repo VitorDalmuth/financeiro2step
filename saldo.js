@@ -337,7 +337,9 @@ function vSaldo(){
   (cs.length ? '<div class="pg mb12">' + cs.map(salCard).join('') + '</div>' :
     '<div class="tw mb12"><div class="empty"><b>Nenhuma conta vinculada</b>Clique em <b style="display:inline;font-size:13px">+ Vincular conta</b>, escolha a conta de anúncios, o cliente e o saldo mínimo.</div></div>') +
 
-  (euSouAdmin() ? '<div class="grid g2 mb12">' + salCardConexao() + salCardConfig() + '</div>' + '<div class="mb12">' + salCardAgenda() + '</div>' : '') +
+  (euSouAdmin() ? '<div class="grid g2 mb12">' + salCardConexao() + salCardConfig() + '</div>' +
+    (typeof gglCard === 'function' ? '<div class="mb12">' + gglCard() + '</div>' : '') +
+    '<div class="mb12">' + salCardAgenda() + '</div>' : '') +
   salCardLog();
 }
 

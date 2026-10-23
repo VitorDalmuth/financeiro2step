@@ -1,6 +1,7 @@
 /* ============================================================
    2STEP · ALERTA DE SALDO META
-   /api/meta-saldo?acao=cron&chave=SENHA  rodada automática (agendador)
+   /api/meta-saldo?acao=cron&chave=SENHA  rodada automática (agendador):
+                                          saldos + rascunhos dos relatórios
    /api/meta-saldo?acao=status            o que já está configurado
    /api/meta-saldo?acao=contas            contas de anúncio que a conexão vê
    /api/meta-saldo?acao=verificar  (POST) lê os saldos e avisa agora
@@ -11,6 +12,7 @@
    A volta do login do Facebook chega em api/meta-retorno.js.
    ============================================================ */
 var meta = require('./_meta-core');
+var rel = require('./_relatorio-core');
 
 function erro(msg, http){ return Object.assign(new Error(msg), { http: http }); }
 function soPost(req){ if(req.method !== 'POST') throw erro('use POST', 405); }
@@ -24,7 +26,11 @@ module.exports = async function(req, res){
 
     if(acao === 'cron'){
       if(!meta.cronConfere(req)) return res.status(401).json({ ok: false, erro: 'senha do agendador inválida' });
-      return res.status(200).json({ ok: true, resumo: await meta.verifica('agendado') });
+      var resumo = await meta.verifica('agendado');
+      /* aproveita a rodada: rascunhos dos relatórios semanais (a partir de segunda 7h) */
+      var relatorios;
+      try{ relatorios = await rel.pendentes(); }catch(e){ relatorios = { erro: String(e.message || e) }; }
+      return res.status(200).json({ ok: true, resumo: resumo, relatorios: relatorios });
     }
 
     if(acao === 'status'){

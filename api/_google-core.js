@@ -233,5 +233,5 @@ async function investiga(cid, gerente){
 module.exports = {
   configStatus: configStatus, iniciaLogin: iniciaLogin, concluiLogin: concluiLogin,
   conexaoPublica: conexaoPublica, desconecta: desconecta, listaContas: listaContas, investiga: investiga,
-  acesso: acesso, leSaldo: leSaldo
+  acesso: acesso, leSaldo: leSaldo, gaql: gaql, mcc: mcc
 };

@@ -45,15 +45,41 @@ function acao(lista, tipos){
   return 0;
 }
 /* visitas ao perfil do Instagram: a Meta já mudou o nome dessa ação algumas vezes */
+var RE_PERFIL = /profile_visit|profile_view|ig_profile|instagram_profile/i;
 function visitasPerfil(lista){
-  return (lista || []).filter(function(x){ return /profile_visit/i.test(x.action_type); })
+  return (lista || []).filter(function(x){ return RE_PERFIL.test(x.action_type); })
     .reduce(function(m, x){ return Math.max(m, Number(x.value) || 0); }, 0);
 }
-async function leMeta(actId, inicio, fim, tk){
+/* Em campanha de Tráfego com destino "Perfil do Instagram" as visitas vêm como
+   RESULTADO da campanha (campo "results"), não na lista de ações. Lê por campanha
+   e soma os resultados de visita ao perfil. Se o campo não existir, segue sem ele. */
+async function resultadosPerfil(actId, inicio, fim, tk){
+  try{
+    var j = await meta.metaFetch(meta.metaUrl(actId + '/insights', {
+      fields: 'campaign_name,objective,results', level: 'campaign', limit: 200,
+      time_range: JSON.stringify({ since: inicio, until: fim })
+    }, tk));
+    var total = 0;
+    (j.data || []).forEach(function(c){
+      (c.results || []).forEach(function(r){
+        if(RE_PERFIL.test(String(r.indicator || ''))) total += Number(((r.values || [])[0] || {}).value) || 0;
+      });
+    });
+    return { total: total, bruto: JSON.stringify(j.data || []).slice(0, 4000) };
+  }catch(e){ return { total: 0, bruto: 'erro: ' + e.message }; }
+}
+async function leMeta(actId, inicio, fim, tk, diag){
   var j = await meta.metaFetch(meta.metaUrl(actId + '/insights', {
     fields: CAMPOS_META, level: 'account', time_range: JSON.stringify({ since: inicio, until: fim })
   }, tk));
   var d = (j.data || [])[0] || {};
+  var res = await resultadosPerfil(actId, inicio, fim, tk);
+  /* guarda o que a Meta devolveu, para conferência no relatório */
+  if(diag) diag.push({
+    conta: actId,
+    acoes: (d.actions || []).map(function(a){ return { t: a.action_type, v: a.value }; }),
+    resultados: res.bruto
+  });
   return {
     invest: Number(d.spend) || 0, impressoes: Number(d.impressions) || 0, alcance: Number(d.reach) || 0,
     cliques: Number(d.clicks) || 0, cliquesLink: Number(d.inline_link_clicks) || 0,
@@ -61,7 +87,7 @@ async function leMeta(actId, inicio, fim, tk){
     cliquesSaida: (d.outbound_clicks || []).reduce(function(a, x){ return a + (Number(x.value) || 0); }, 0),
     conversas: acao(d.actions, ACOES.conversas), leads: acao(d.actions, ACOES.leads),
     compras: acao(d.actions, ACOES.compras), valorCompras: acao(d.action_values, ACOES.compras),
-    engajamento: acao(d.actions, ACOES.engajamento), visitasPerfil: visitasPerfil(d.actions),
+    engajamento: acao(d.actions, ACOES.engajamento), visitasPerfil: Math.max(visitasPerfil(d.actions), res.total),
     thruplay: ((d.video_thruplay_watched_actions || [])[0] || {}).value ? Number(d.video_thruplay_watched_actions[0].value) : 0
   };
 }
@@ -100,13 +126,13 @@ async function gera(clienteId, inicio, origem){
   var cGoogle = contas.filter(function(c){ return c.plataforma === 'google'; });
   if(!contas.length) throw erro('Escolha pelo menos uma conta de anúncios na configuração do cliente', 400);
 
-  var originais = {}, erros = [];
+  var originais = {}, erros = [], brutoMeta = [];
   if(cMeta.length){
     try{
       var tk = (await meta.tokenAtual()).token;
       originais.meta = {};
       for(var i = 0; i < cMeta.length; i++){
-        try{ soma(originais.meta, await leMeta(cMeta[i].id, inicio, fim, tk)); }
+        try{ soma(originais.meta, await leMeta(cMeta[i].id, inicio, fim, tk, brutoMeta)); }
         catch(e){ erros.push('Meta · ' + (cMeta[i].nome || cMeta[i].id) + ': ' + e.message); }
       }
     }catch(e){ erros.push('Meta: ' + e.message); }
@@ -122,7 +148,7 @@ async function gera(clienteId, inicio, origem){
     }catch(e){ erros.push('Google: ' + e.message); }
   }
 
-  var reg = { inicio: inicio, fim: fim, geradoEm: new Date().toISOString(), origem: origem || 'manual', originais: originais, erros: erros };
+  var reg = { inicio: inicio, fim: fim, geradoEm: new Date().toISOString(), origem: origem || 'manual', originais: originais, erros: erros, brutoMeta: brutoMeta };
   var r = ref('relatorios/semanas/' + clienteId + '/' + inicio);
   await r.update(reg);   /* update: mantém os ajustes manuais e a data de envio */
   return (await r.once('value')).val();

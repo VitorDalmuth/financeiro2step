@@ -57,7 +57,8 @@ async function leMeta(actId, inicio, fim, tk){
   return {
     invest: Number(d.spend) || 0, impressoes: Number(d.impressions) || 0, alcance: Number(d.reach) || 0,
     cliques: Number(d.clicks) || 0, cliquesLink: Number(d.inline_link_clicks) || 0,
-    cliquesSaida: acao(d.outbound_clicks, ['outbound_click']),
+    /* cliques de saída: soma o que vier no campo, seja qual for o nome do tipo */
+    cliquesSaida: (d.outbound_clicks || []).reduce(function(a, x){ return a + (Number(x.value) || 0); }, 0),
     conversas: acao(d.actions, ACOES.conversas), leads: acao(d.actions, ACOES.leads),
     compras: acao(d.actions, ACOES.compras), valorCompras: acao(d.action_values, ACOES.compras),
     engajamento: acao(d.actions, ACOES.engajamento), visitasPerfil: visitasPerfil(d.actions),

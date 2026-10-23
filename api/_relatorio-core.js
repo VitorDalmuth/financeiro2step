@@ -28,7 +28,7 @@ function segundaDe(d){ var dow = (new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 
 function semanaPassada(){ return addDias(segundaDe(hojeSP()), -7); }
 
 /* ---------- Meta ---------- */
-var CAMPOS_META = 'spend,impressions,reach,clicks,inline_link_clicks,actions,action_values,video_thruplay_watched_actions';
+var CAMPOS_META = 'spend,impressions,reach,clicks,inline_link_clicks,outbound_clicks,actions,action_values,video_thruplay_watched_actions';
 /* tipos de ação, em ordem de preferência (pega o primeiro que existir para não contar duas vezes) */
 var ACOES = {
   conversas: ['onsite_conversion.messaging_conversation_started_7d'],
@@ -57,6 +57,7 @@ async function leMeta(actId, inicio, fim, tk){
   return {
     invest: Number(d.spend) || 0, impressoes: Number(d.impressions) || 0, alcance: Number(d.reach) || 0,
     cliques: Number(d.clicks) || 0, cliquesLink: Number(d.inline_link_clicks) || 0,
+    cliquesSaida: acao(d.outbound_clicks, ['outbound_click']),
     conversas: acao(d.actions, ACOES.conversas), leads: acao(d.actions, ACOES.leads),
     compras: acao(d.actions, ACOES.compras), valorCompras: acao(d.action_values, ACOES.compras),
     engajamento: acao(d.actions, ACOES.engajamento), visitasPerfil: visitasPerfil(d.actions),
@@ -133,7 +134,8 @@ async function pendentes(){
   var semana = semanaPassada();
   var clientes = (await ref('relatorios/clientes').once('value')).val() || {};
   var feitos = 0, falhas = [];
-  var ids = Object.keys(clientes);
+  /* só clientes que já têm conta de anúncio configurada */
+  var ids = Object.keys(clientes).filter(function(k){ return clientes[k] && Object.keys(clientes[k].contas || {}).length; });
   for(var i = 0; i < ids.length && feitos < POR_RODADA; i++){
     var ja = (await ref('relatorios/semanas/' + ids[i] + '/' + semana + '/geradoEm').once('value')).val();
     if(ja) continue;

@@ -474,8 +474,24 @@ function vRelRelatorio(id, ini){
     '<div>' + edicao +
       '<div class="tw"><div class="rel-ed"><div class="rel-n"><b>Investimento total da semana</b><div class="sub">soma das plataformas</div></div><b class="mono">' + brl(relTotal(c, s)) + '</b></div></div>' +
       '<div class="hint mt12">▲ ▼ mudam a ordem das métricas (vale para os próximos relatórios deste cliente). Mudou um número? Os que dependem dele se ajustam sozinhos; o ↺ volta ao valor da plataforma.</div>' +
+      relBrutoHTML(s) +
       '<div class="flx mt18" style="justify-content:flex-end"><button class="btn btn-s btn-d" onclick="relExclui(\'' + esc(id) + '\',\'' + ini + '\')">Excluir este relatório</button></div>' +
     '</div></div>';
+}
+/* o que a Meta devolveu na última vez que os dados foram puxados (para conferir nomes de métricas) */
+function relBrutoTexto(s){
+  return (s.brutoMeta || []).map(function(b){
+    return 'Conta ' + b.conta + '\n' +
+      (b.acoes || []).map(function(a){ return '  ' + a.t + ': ' + a.v; }).join('\n') +
+      '\n  resultados por campanha: ' + (b.resultados || '—');
+  }).join('\n\n');
+}
+function relBrutoHTML(s){
+  if(!(s.brutoMeta || []).length) return '';
+  return '<details class="mt12"><summary style="cursor:pointer;font-size:12px;color:var(--mute)">Dados brutos da Meta (conferência)</summary>' +
+    '<pre class="mono" style="white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--mute);background:var(--slab2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;max-height:260px;overflow:auto">' +
+    esc(relBrutoTexto(s)) + '</pre>' +
+    '<button class="btn btn-s mt12" onclick="salCopia(relBrutoTexto(relSem(REL.sel, REL.semana)))">Copiar dados brutos</button></details>';
 }
 function relEdita(id, p, k, txt){
   var ini = REL.semana;

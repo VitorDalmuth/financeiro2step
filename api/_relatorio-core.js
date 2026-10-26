@@ -126,14 +126,35 @@ function soma(a, b){
   return a;
 }
 
-/* ---------- gerar ---------- */
-async function gera(clienteId, inicio, origem){
+/* ---------- gerar ----------
+   O relatório fica guardado na semana (segunda) de "inicio". O período analisado
+   é a semana inteira, a não ser que um período próprio (de/ate) tenha sido
+   escolhido no relatório: ele fica salvo e vale também para "Atualizar dados".
+   opc: { de, ate } muda o período · { padrao: true } volta para a semana. */
+var DATA = /^\d{4}-\d{2}-\d{2}$/;
+var MAX_DIAS = 62;
+async function gera(clienteId, inicio, origem, opc){
+  opc = opc || {};
   if(!/^[A-Za-z0-9_-]{1,40}$/.test(String(clienteId || ''))) throw erro('Cliente inválido', 400);
   var cfg = (await ref('relatorios/clientes/' + clienteId).once('value')).val();
   if(!cfg) throw erro('Esse cliente não está configurado em Relatórios', 404);
-  inicio = /^\d{4}-\d{2}-\d{2}$/.test(String(inicio || '')) ? segundaDe(inicio) : semanaPassada();
+  inicio = DATA.test(String(inicio || '')) ? segundaDe(inicio) : semanaPassada();
   var fim = addDias(inicio, 6);
-  if(fim >= hojeSP()) throw erro('Essa semana ainda não terminou. O relatório sai na segunda-feira seguinte.', 400);
+  var r = ref('relatorios/semanas/' + clienteId + '/' + inicio);
+  var antes = (await r.once('value')).val() || {};
+
+  var de = inicio, ate = fim, proprio = false;
+  if(opc.de || opc.ate){
+    if(!DATA.test(String(opc.de)) || !DATA.test(String(opc.ate))) throw erro('Datas inválidas', 400);
+    if(opc.de > opc.ate) throw erro('A data inicial precisa ser antes da final', 400);
+    if((Date.parse(opc.ate) - Date.parse(opc.de)) / 864e5 + 1 > MAX_DIAS) throw erro('Período longo demais: até ' + MAX_DIAS + ' dias', 400);
+    de = opc.de; ate = opc.ate; proprio = true;
+  }else if(!opc.padrao && antes.proprio && antes.de && antes.ate){
+    de = antes.de; ate = antes.ate; proprio = true;
+  }
+  if(ate >= hojeSP()) throw erro(proprio ? 'A data final precisa ser no máximo ontem' : 'Essa semana ainda não terminou. O relatório sai na segunda-feira seguinte.', 400);
+  /* mudou o período: os ajustes manuais eram de outros números e saem */
+  var mudouPeriodo = (antes.de || antes.inicio || inicio) !== de || (antes.ate || antes.fim || fim) !== ate;
 
   var contas = Object.keys(cfg.contas || {}).map(function(k){ return cfg.contas[k]; }).filter(Boolean);
   var cMeta = contas.filter(function(c){ return c.plataforma !== 'google'; });
@@ -146,7 +167,7 @@ async function gera(clienteId, inicio, origem){
       var tk = (await meta.tokenAtual()).token;
       originais.meta = {};
       for(var i = 0; i < cMeta.length; i++){
-        try{ soma(originais.meta, await leMeta(cMeta[i].id, inicio, fim, tk, brutoMeta)); }
+        try{ soma(originais.meta, await leMeta(cMeta[i].id, de, ate, tk, brutoMeta)); }
         catch(e){ erros.push('Meta · ' + (cMeta[i].nome || cMeta[i].id) + ': ' + e.message); }
       }
     }catch(e){ erros.push('Meta: ' + e.message); }
@@ -156,15 +177,16 @@ async function gera(clienteId, inicio, origem){
       var gtk = await google.acesso();
       originais.google = {};
       for(var j = 0; j < cGoogle.length; j++){
-        try{ soma(originais.google, await leGoogle(cGoogle[j].googleId, cGoogle[j].gerente, inicio, fim, gtk)); }
+        try{ soma(originais.google, await leGoogle(cGoogle[j].googleId, cGoogle[j].gerente, de, ate, gtk)); }
         catch(e){ erros.push('Google · ' + (cGoogle[j].nome || cGoogle[j].googleId) + ': ' + e.message); }
       }
     }catch(e){ erros.push('Google: ' + e.message); }
   }
 
-  var reg = { inicio: inicio, fim: fim, geradoEm: new Date().toISOString(), origem: origem || 'manual', originais: originais, erros: erros, brutoMeta: brutoMeta };
-  var r = ref('relatorios/semanas/' + clienteId + '/' + inicio);
-  await r.update(reg);   /* update: mantém os ajustes manuais e a data de envio */
+  var reg = { inicio: inicio, fim: fim, de: de, ate: ate, proprio: proprio,
+              geradoEm: new Date().toISOString(), origem: origem || 'manual', originais: originais, erros: erros, brutoMeta: brutoMeta };
+  if(mudouPeriodo && antes.editados) reg.editados = null;
+  await r.update(reg);   /* update: mantém os ajustes manuais (se o período é o mesmo) e a data de envio */
   return (await r.once('value')).val();
 }
 

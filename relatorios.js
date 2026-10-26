@@ -90,6 +90,13 @@ function relHoje(){ return new Date().toLocaleDateString('sv-SE', { timeZone: 'A
 function relSegunda(d){ var dow = (new Date(d + 'T12:00:00').getDay() + 6) % 7; return addDias(d, -dow); }
 function relSemanaPassada(){ return addDias(relSegunda(relHoje()), -7); }
 function relPeriodo(ini){ var fim = addDias(ini, 6); return ini.slice(8, 10) + '/' + ini.slice(5, 7) + ' a ' + dLabel(fim); }
+/* período que o relatório analisa: a semana, ou o período próprio escolhido nele */
+function relPeriodoDe(s, ini){
+  if(!(s && s.proprio && s.de && s.ate)) return relPeriodo(ini);
+  return s.de.slice(8, 10) + '/' + s.de.slice(5, 7) + (s.de.slice(0, 4) !== s.ate.slice(0, 4) ? '/' + s.de.slice(0, 4) : '') + ' a ' + dLabel(s.ate);
+}
+function relPeriodoTexto(s, ini){ return relPeriodoDe(s, ini) + (s && s.proprio ? '' : ' · Segunda a Domingo'); }
+function relDias(de, ate){ return Math.round((Date.parse(ate + 'T12:00:00') - Date.parse(de + 'T12:00:00')) / 864e5) + 1; }
 
 /* ---------- dados ---------- */
 function relLiga(){
@@ -169,15 +176,18 @@ function relUpd(caminho, obj){
 }
 
 /* ---------- servidor ---------- */
-function relGerar(id, ini){
+/* opc: { de, ate } período próprio · { padrao: true } volta para a semana inteira */
+function relGerar(id, ini, opc){
   if(REL.ocupado) return;
   ini = ini || relSemanaPassada();
+  opc = opc || {};
   fecha();
-  if(MEM){ relDemoSemana(id, ini, 'manual'); REL.semana = ini; render(); toast('Demonstração: números de exemplo', 'ok'); return; }
+  if(MEM){ relDemoSemana(id, ini, 'manual', opc); REL.semana = ini; render(); toast('Demonstração: números de exemplo', 'ok'); return; }
   if(!AUTH || !AUTH.currentUser) return toast('Faça login de novo', 'err');
   REL.ocupado = 'gerar:' + ini; render();
+  var extra = opc.padrao ? '&padrao=1' : (opc.de ? '&de=' + opc.de + '&ate=' + opc.ate : '');
   AUTH.currentUser.getIdToken().then(function(tk){
-    return fetch('/api/relatorios?acao=gerar&cliente=' + encodeURIComponent(id) + '&semana=' + ini, { method: 'POST', headers: { Authorization: 'Bearer ' + tk } });
+    return fetch('/api/relatorios?acao=gerar&cliente=' + encodeURIComponent(id) + '&semana=' + ini + extra, { method: 'POST', headers: { Authorization: 'Bearer ' + tk } });
   }).then(function(r){
     return r.json().catch(function(){ throw new Error(r.status === 404 ? 'A função de relatórios ainda não está publicada na Vercel' : 'Resposta inválida do servidor (' + r.status + ')'); });
   }).then(function(j){
@@ -282,7 +292,8 @@ function vRelCard(id){
   var lista = sems.length ? '<div class="tsc"><table><thead><tr><th>Semana</th><th>Situação</th><th class="tr">Investido</th><th class="tr rel-ab"></th></tr></thead><tbody>' +
     sems.map(function(ini){
       var s = relSem(id, ini);
-      return '<tr style="cursor:pointer" onclick="relAbreSemana(\'' + ini + '\')"><td><div class="nm">' + relPeriodo(ini) + '</div><div class="sub">' +
+      return '<tr style="cursor:pointer" onclick="relAbreSemana(\'' + ini + '\')"><td><div class="nm">' + relPeriodoDe(s, ini) +
+        (s.proprio ? ' <span class="pill p-vl">ajustado</span>' : '') + '</div><div class="sub">' +
         (s.origem === 'automatico' ? 'rascunho automático' : 'gerado no painel') + ' · ' + dLabel(String(s.geradoEm || '').slice(0, 10)) + '</div></td>' +
         '<td>' + relSituacao(s) + '</td><td class="tr mono">' + (s.originais ? brl(relTotal(c, s)) : '—') + '</td>' +
         '<td class="tr rel-ab"><button class="btn btn-s">Abrir</button></td></tr>';
@@ -439,7 +450,8 @@ function vRelRelatorio(id, ini){
 
   var topo = '<button class="bk" onclick="relVoltar()">← Relatórios de ' + esc(relNome(id)) + '</button>' +
     '<div class="hd"><div class="flx" style="flex-wrap:nowrap;gap:12px">' + relLogoHTML(c, id) + '<div><h1>' + esc(relNome(id)) + '</h1>' +
-      '<p>' + relPeriodo(ini) + ' · Segunda a Domingo</p></div></div>' +
+      '<p><span style="cursor:pointer;border-bottom:1px dashed var(--mute2)" title="Mudar o período" onclick="mRelPeriodo(\'' + esc(id) + '\',\'' + ini + '\')">' +
+        relPeriodoTexto(s, ini) + ' ✎</span>' + (s.proprio ? ' <span class="pill p-vl">período ajustado</span>' : '') + '</p></div></div>' +
     '<div class="hd-act"><button class="btn" onclick="relGerar(\'' + esc(id) + '\',\'' + ini + '\')"' + (oc ? ' disabled' : '') + '>' + (oc ? 'Puxando...' : 'Atualizar dados') + '</button>' +
       (s.originais ? (podeShare ? '<button class="btn" onclick="relExporta(\'' + esc(id) + '\', true)">Compartilhar</button>' : '') +
         '<button class="btn btn-p" onclick="relExporta(\'' + esc(id) + '\')">Baixar imagem</button>' : '') +
@@ -447,9 +459,16 @@ function vRelRelatorio(id, ini){
 
   var avisos = (s.erros || []).length ? '<div class="note" style="background:var(--coral-dim);border-color:rgba(251,113,133,.35);color:#fda4af">' +
     s.erros.map(esc).join('<br>') + '</div>' : '';
-  var info = '<div class="hint mb12">' + (s.origem === 'automatico' ? 'Rascunho automático' : 'Gerado no painel') + ' em ' + dLabel(String(s.geradoEm || '').slice(0, 10)) +
-    (s.enviadoEm ? ' · <b style="color:var(--mint)">enviado em ' + dLabel(String(s.enviadoEm).slice(0, 10)) + '</b>' : '') + '</div>';
+  var info = '<div class="hint mb12">' + (s.origem === 'automatico' ? 'Rascunho automático' : 'Gerado no painel') + ' em ' + dLabel(String(s.geradoEm || '').slice(0, 10)) + '</div>';
   if(!s.originais) return topo + avisos + info;
+  /* situação de envio: marca sozinho ao baixar/compartilhar, ou à mão aqui */
+  info += s.enviadoEm
+    ? '<div class="note flx" style="background:var(--mint-dim);border-color:rgba(52,211,153,.3);color:var(--mint);justify-content:space-between">' +
+        '<span>✓ Enviado ao cliente em ' + dLabel(String(s.enviadoEm).slice(0, 10)) + '</span>' +
+        '<button class="btn btn-s" onclick="relEnviado(\'' + esc(id) + '\',\'' + ini + '\', false)">Desfazer</button></div>'
+    : '<div class="note flx" style="justify-content:space-between">' +
+        '<span>Pronto para revisar. Depois de mandar para o cliente, marque como enviado.</span>' +
+        '<button class="btn btn-s btn-p" onclick="relEnviado(\'' + esc(id) + '\',\'' + ini + '\', true)">Marcar como enviado</button></div>';
 
   var edicao = relPlats(c).map(function(p){
     var v = relValores(s, p), ed = ((s.editados || {})[p]) || {}, lista = c.metricas[p];
@@ -513,6 +532,36 @@ function relMove(id, p, i, k){
   var o = {}; o['metricas/' + p] = l;
   relUpd('clientes/' + id, o);
   render();
+}
+/* período próprio: ex. o cliente começou na quinta, então de quinta até o domingo */
+var REL_MAX_DIAS = 62;
+function mRelPeriodo(id, ini){
+  var s = relSem(id, ini) || {}, ontem = addDias(relHoje(), -1);
+  var de = (s.proprio && s.de) || ini, ate = (s.proprio && s.ate) || addDias(ini, 6);
+  var temAjustes = Object.keys(s.editados || {}).some(function(p){ return Object.keys(s.editados[p] || {}).length; });
+  modal('Período do relatório',
+    '<div class="fr fr2"><div class="fg"><label class="fl">De</label><input type="date" class="fi" id="r_de" value="' + de + '" max="' + ontem + '"></div>' +
+      '<div class="fg"><label class="fl">Até</label><input type="date" class="fi" id="r_ate" value="' + ate + '" max="' + ontem + '"></div></div>' +
+    '<div class="hint">Exemplo: o cliente começou na quinta? Coloque de quinta até o domingo. Pode aumentar ou diminuir, até ' + REL_MAX_DIAS + ' dias. ' +
+      'As métricas são puxadas de novo para esse período e a imagem mostra as datas escolhidas.' +
+      (temAjustes ? ' <b style="color:var(--amber)">Os ajustes manuais deste relatório são apagados</b>, porque os números mudam.' : '') + '</div>',
+    (s.proprio ? '<button class="btn" style="margin-right:auto" onclick="relGerar(\'' + esc(id) + '\',\'' + ini + '\',{padrao:true})">Voltar para a semana</button>' : '') +
+    '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="relAplicaPeriodo(\'' + esc(id) + '\',\'' + ini + '\')">Aplicar e puxar dados</button>');
+}
+function relAplicaPeriodo(id, ini){
+  var de = $('r_de').value, ate = $('r_ate').value, ontem = addDias(relHoje(), -1);
+  if(!de || !ate) return toast('Preencha as duas datas', 'err');
+  if(de > ate) return toast('A data inicial precisa ser antes da final', 'err');
+  if(ate > ontem) return toast('A data final precisa ser no máximo ontem', 'err');
+  if(relDias(de, ate) > REL_MAX_DIAS) return toast('Período longo demais: até ' + REL_MAX_DIAS + ' dias', 'err');
+  relGerar(id, ini, { de: de, ate: ate });
+}
+function relEnviado(id, ini, sim){
+  var s = relSem(id, ini), v = sim ? new Date().toISOString() : null;
+  if(s){ if(v) s.enviadoEm = v; else delete s.enviadoEm; }
+  relUpd('semanas/' + id + '/' + ini, { enviadoEm: v });
+  render();
+  toast(sim ? 'Marcado como enviado' : 'Voltou para "pronto para revisar"', 'ok');
 }
 function relExclui(id, ini){
   if(!confirm('Excluir o relatório de ' + relPeriodo(ini) + '?\n\nOs ajustes manuais dele também são apagados.')) return;
@@ -579,8 +628,9 @@ function relDesenha(id, ini){
     ctx.fillText('2STEP · Relatório Semanal', P, P + 26);
     ctx.fillStyle = '#FFFFFF'; relCabe(ctx, relNome(id), '700', 58, DISP, largTexto, 30);
     ctx.fillText(relNome(id), P, P + 100);
-    ctx.fillStyle = REL_COR.claro; relCabe(ctx, relPeriodo(ini) + ' · Segunda a Domingo', '500', 28, CORPO, largTexto, 18);
-    ctx.fillText(relPeriodo(ini) + ' · Segunda a Domingo', P, P + 148);
+    var per = relPeriodoTexto(s, ini);
+    ctx.fillStyle = REL_COR.claro; relCabe(ctx, per, '500', 28, CORPO, largTexto, 18);
+    ctx.fillText(per, P, P + 148);
     if(logo){
       var lx = W - P - LOGO, ly = P;
       ctx.fillStyle = '#FFFFFF'; relRR(ctx, lx, ly, LOGO, LOGO, 28); ctx.fill();
@@ -653,10 +703,16 @@ function relExporta(id, compartilhar){
 }
 
 /* ---------- demonstração (sem Firebase) ---------- */
-function relDemoSemana(id, ini, origem){
+function relDemoSemana(id, ini, origem, opc){
   var r = function(a, b){ return Math.round(a + Math.random() * (b - a)); };
+  var antes = relSem(id, ini) || {}, de = ini, ate = addDias(ini, 6), proprio = false;
+  opc = opc || {};
+  if(opc.de){ de = opc.de; ate = opc.ate; proprio = true; }
+  else if(!opc.padrao && antes.proprio){ de = antes.de; ate = antes.ate; proprio = true; }
+  var mudou = (antes.de || ini) !== de || (antes.ate || addDias(ini, 6)) !== ate;
   (REL.sem[id] = REL.sem[id] || {})[ini] = {
-    inicio: ini, fim: addDias(ini, 6), geradoEm: new Date().toISOString(), origem: origem, erros: [],
+    inicio: ini, fim: addDias(ini, 6), de: de, ate: ate, proprio: proprio, editados: mudou ? null : antes.editados, enviadoEm: antes.enviadoEm,
+    geradoEm: new Date().toISOString(), origem: origem, erros: [],
     originais: {
       meta: { invest: r(800, 1600) + 0.37, conversas: r(30, 70), leads: r(5, 25), alcance: r(12000, 24000), visitasPerfil: r(600, 1500), cliquesLink: r(400, 900),
               cliquesSaida: r(350, 800), cliques: r(1200, 2400), impressoes: r(40000, 80000), compras: 0, valorCompras: 0, engajamento: r(2000, 5000), thruplay: r(1000, 4000) },

@@ -271,9 +271,15 @@ async function enviaWhats(texto, cfg){
   if(cfg.canal === 'zapi'){
     if(!process.env.ZAPI_INSTANCIA || !process.env.ZAPI_TOKEN) throw new Error('ZAPI_INSTANCIA e ZAPI_TOKEN não configurados na Vercel');
     if(!cfg.destino) throw new Error('Escolha o grupo ou número que recebe os alertas');
+    /* com o WhatsApp desconectado a Z-API aceita a mensagem e ela não chega:
+       confere antes e trata como falha (o alerta tenta de novo na próxima rodada) */
+    var st = await zapiStatus().catch(function(e){ return { conectado: false, erro: e.message }; });
+    if(!st.conectado) throw new Error('Z-API: o WhatsApp do chip está desconectado' + (st.erro ? ' (' + st.erro + ')' : '') + '. Leia o QR code de novo no painel da Z-API.');
     var r = await fetch(zapiBase() + '/send-text', { method: 'POST', headers: zapiHeaders(), body: JSON.stringify({ phone: cfg.destino, message: texto }) });
     var j = await r.json().catch(function(){ return {}; });
     if(!r.ok || j.error) throw new Error('Z-API: ' + (j.error || j.message || ('respondeu ' + r.status)));
+    /* só considera enviado se a Z-API devolver o código da mensagem */
+    if(!(j.messageId || j.zaapId || j.id)) throw new Error('Z-API: não confirmou o envio da mensagem');
     return;
   }
   throw new Error('O alerta no WhatsApp está desligado');

@@ -462,6 +462,6 @@ module.exports = {
   listaContas: listaContas, zapiStatus: zapiStatus, zapiGrupos: zapiGrupos,
   iniciaLogin: iniciaLogin, concluiLogin: concluiLogin, desconecta: desconecta,
   verifica: verifica, enviaTeste: enviaTeste,
-  tokenAtual: tokenAtual, metaFetch: metaFetch, metaUrl: metaUrl,
+  tokenAtual: tokenAtual, metaFetch: metaFetch, metaUrl: metaUrl, enviaWhats: enviaWhats,
   _numeroTexto: numeroTexto, _saldoDe: saldoDe
 };

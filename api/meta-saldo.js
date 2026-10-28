@@ -1,7 +1,8 @@
 /* ============================================================
    2STEP · ALERTA DE SALDO META
    /api/meta-saldo?acao=cron&chave=SENHA  rodada automática (agendador):
-                                          saldos + rascunhos dos relatórios
+                                          saldos + rascunhos dos relatórios +
+                                          WhatsApp das tarefas da social media
    /api/meta-saldo?acao=status            o que já está configurado
    /api/meta-saldo?acao=contas            contas de anúncio que a conexão vê
    /api/meta-saldo?acao=verificar  (POST) lê os saldos e avisa agora
@@ -13,6 +14,7 @@
    ============================================================ */
 var meta = require('./_meta-core');
 var rel = require('./_relatorio-core');
+var tar = require('./_tarefas-core');
 
 function erro(msg, http){ return Object.assign(new Error(msg), { http: http }); }
 function soPost(req){ if(req.method !== 'POST') throw erro('use POST', 405); }
@@ -30,7 +32,10 @@ module.exports = async function(req, res){
       /* aproveita a rodada: rascunhos dos relatórios semanais (a partir de segunda 7h) */
       var relatorios;
       try{ relatorios = await rel.pendentes(); }catch(e){ relatorios = { erro: String(e.message || e) }; }
-      return res.status(200).json({ ok: true, resumo: resumo, relatorios: relatorios });
+      /* e as tarefas da social media: resumo do dia e lembretes de pendências */
+      var tarefas, painel = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || '');
+      try{ tarefas = await tar.rodada(painel); }catch(e){ tarefas = { erro: String(e.message || e) }; }
+      return res.status(200).json({ ok: true, resumo: resumo, relatorios: relatorios, tarefas: tarefas });
     }
 
     if(acao === 'status'){

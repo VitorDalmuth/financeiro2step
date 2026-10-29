@@ -79,6 +79,18 @@
         "config": {
           ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
         }
+      },
+      "tarefasTrafego": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        "avulsas": {
+          ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
+        },
+        "feitas": {
+          ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
+        },
+        "config": {
+          ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
+        }
       }
     }
   }

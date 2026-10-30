@@ -393,6 +393,19 @@ function tarBuscaGrupos(){
   salApi('grupos').then(function(j){ SAL.grupos = j.grupos; TAR.ocupado = ''; render(); toast(j.grupos.length + ' grupo(s) encontrado(s)', 'ok'); },
     function(e){ TAR.ocupado = ''; render(); toast(e.message, 'err'); });
 }
+/* tráfego: criar tarefa mandando mensagem no grupo (webhook "Ao receber" da Z-API → api/zapi-webhook.js) */
+function tarViaGrupoHTML(c){
+  var url = location.origin + '/api/zapi-webhook?chave=SUA_SENHA';
+  return '<div class="fg"><label class="chk' + (c.viaGrupo ? ' on' : '') + '"><input type="checkbox" id="t_via"' + (c.viaGrupo ? ' checked' : '') +
+      ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">Criar tarefas por mensagem no grupo</label>' +
+    '<div class="hint" style="margin-top:8px">Quem estiver no grupo manda a mensagem neste formato e a tarefa entra sozinha, com confirmação no grupo:</div>' +
+    '<pre class="mono" style="font-size:12px;background:var(--slab2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;white-space:pre-wrap">Cliente: Buffet Solar\nTarefa: Subir campanha de remarketing\nData: amanhã</pre>' +
+    '<div class="hint">"Tarefa:" pode repetir. "Data:" aceita hoje, amanhã, o dia da semana ou 05/11; vazia, entra para hoje.</div>' +
+    '<div class="fl mt12">Endereço para a Z-API (Webhooks › Ao receber)</div>' +
+    '<div class="flx" style="flex-wrap:nowrap"><input class="fi mono" style="font-size:11.5px" readonly value="' + esc(url) + '" onclick="this.select()">' +
+    '<button class="btn btn-s" onclick="salCopia(\'' + esc(url) + '\')">Copiar</button></div>' +
+    '<div class="hint">Troque SUA_SENHA pela mesma senha do agendador (CRON_SECRET).</div></div>';
+}
 function tarCfgHTML(){
   var Q = tarQ(), c = tarCfg(), hR = c.horaResumo != null ? +c.horaResumo : 9, lemb = (c.lembretes || [12, 15, 18]).map(Number);
   var zst = (typeof SAL !== 'undefined' && SAL.zapi) ? (SAL.zapi.conectado ? '<span class="pill p-on">WhatsApp conectado</span>' : '<span class="pill p-cr">WhatsApp desconectado</span>') : '';
@@ -411,7 +424,8 @@ function tarCfgHTML(){
     destino = '<div class="fg"><label class="fl">Grupo do WhatsApp</label><div class="flx" style="flex-wrap:nowrap;align-items:flex-start"><div style="flex:1;min-width:0">' + campo + '</div>' +
       '<button class="btn" type="button" onclick="tarBuscaGrupos()"' + (TAR.ocupado === 'grupos' ? ' disabled' : '') + '>' + (TAR.ocupado === 'grupos' ? 'Buscando...' : 'Buscar grupos') + '</button></div>' +
       (c.grupoNome && !gs ? '<div class="hint">Grupo atual: <b style="color:var(--ink)">' + esc(c.grupoNome) + '</b></div>' : '') +
-      '<div class="hint">O número da Z-API precisa estar no grupo. Pode ser um grupo diferente do de saldo.</div></div>';
+      '<div class="hint">O número da Z-API precisa estar no grupo. Pode ser um grupo diferente do de saldo.</div></div>' +
+      tarViaGrupoHTML(c);
   }
   return '<div class="tw"><div class="tw-hd"><div class="tw-t">WhatsApp ' + (Q.rotinas ? 'da social media' : 'do tráfego') + '</div>' + zst + '</div><div style="padding:16px">' +
     '<label class="chk' + (c.ligado ? ' on' : '') + '" style="margin-bottom:14px"><input type="checkbox" id="t_lig"' + (c.ligado ? ' checked' : '') + ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">Enviar as tarefas no WhatsApp</label>' +
@@ -436,6 +450,8 @@ function tarSalvaCfg(silencioso){
     if(lig && !grupo){ toast('Escolha o grupo do WhatsApp', 'err'); return false; }
     extra.grupo = grupo;
     extra.grupoNome = g.tagName === 'SELECT' && g.selectedIndex > 0 ? g.options[g.selectedIndex].text : (tarCfg().grupo === grupo ? (tarCfg().grupoNome || '') : '');
+    extra.viaGrupo = !!($('t_via') && $('t_via').checked);
+    if(extra.viaGrupo && !grupo){ toast('Escolha o grupo antes de ligar as tarefas por mensagem', 'err'); return false; }
   }
   var lemb = [].map.call(document.querySelectorAll('#t_lemb button.on'), function(b){ return +b.dataset.h; });
   var c = Object.assign({}, tarCfg(), extra, { ligado: lig, horaResumo: +$('t_hres').value, lembretes: lemb, diasUteis: $('t_uteis').checked,

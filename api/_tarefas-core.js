@@ -191,4 +191,8 @@ async function teste(q){
   await meta.enviaWhats('✅ *Teste das tarefas 2STEP*\n\nSe esta mensagem chegou, as tarefas vão chegar aqui.', dest);
 }
 
-module.exports = { tarefasDoDia: tarefasDoDia, marca: marca, enviaAgora: enviaAgora, rodada: rodada, teste: teste, PADRAO: PADRAO };
+module.exports = {
+  tarefasDoDia: tarefasDoDia, marca: marca, enviaAgora: enviaAgora, rodada: rodada, teste: teste, PADRAO: PADRAO,
+  /* usados por _tarefas-grupo.js */
+  QUADROS: QUADROS, hojeSP: hojeSP, dow: dow, dataBR: dataBR, quando: quando
+};

@@ -1,20 +1,33 @@
 /* ============================================================
    2STEP · HOME
-   Primeira tela ao abrir o app: as tarefas de hoje (social media e
-   tráfego) e as contas de anúncio com saldo abaixo do mínimo.
+   Primeira tela ao abrir o app. À esquerda, a agenda do dia de cada
+   pessoa (tarefas de social media, de tráfego e a rotina de relatórios
+   de segunda), com as atrasadas dos últimos dias. À direita, os alertas:
+   contas de anúncio com saldo abaixo do mínimo.
    Para admin e operação. Não mostra nada do financeiro.
    Depende de app.js (S, EMAIL, VIEW, MOD_ABERTO, MODULOS, go, esc,
-   kpi, toast, chaveEmail), de tarefas.js (TAR, tarLiga, tarDoDia,
-   tarMarca, tarHoje, tarDiaLabel) e de saldo.js (SAL, salLiga,
-   salContas, salSit, salCard, salHa).
-   Não grava dados próprios: usa os das telas de Tarefas e Saldo Ads.
+   toast, chaveEmail, euSouAdmin, addDias), de tarefas.js (TAR, tarLiga,
+   tarDoDia, tarMarca, tarHoje, tarDiaLabel), de saldo.js (SAL, salLiga,
+   salContas, salSit, salCard, salHa) e de checklist.js (ckResp,
+   ckRotinaDoDia, ckRotinaMarca, ckUsuarios, ckNomeUsuario, mCkResponsaveis).
+   Não grava dados próprios.
    ============================================================ */
+
+var HOME = { agenda: 'eu' };
+var HOME_ATRASO_DIAS = 7;   /* atrasadas: o que ficou para trás nos últimos 7 dias */
+var HOME_ORIGEM = { social: 'Social media', trafego: 'Tráfego', rel: 'Relatórios' };
 
 /* estilos só deste módulo */
 (function(){
   var css = '' +
-  '.hm-l{max-height:460px;overflow-y:auto}' +
-  '.hm-f{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--line);flex-wrap:wrap}';
+  '.hm-g{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:12px;align-items:start}' +
+  '.hm-l{max-height:620px;overflow-y:auto}' +
+  '.hm-f{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--line);flex-wrap:wrap}' +
+  '.hm-tag{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--slab3);color:var(--mute);white-space:nowrap}' +
+  '.hm-tag.at{background:var(--coral-dim);color:var(--coral)}' +
+  '.hm-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}' +
+  '.tar-t.at{background:linear-gradient(90deg,var(--coral-dim),transparent 70%)}' +
+  '@media(max-width:1000px){.hm-g{grid-template-columns:1fr}}';
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
 })();
 
@@ -28,75 +41,111 @@ function homeSaudacao(){
   return h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
 }
 
-/* marca a tarefa no quadro certo (tarMarca usa o quadro aberto em TAR.q) */
-function homeMarca(q, data, chave, feito){
+/* ---------- tarefas de todos os quadros, com responsável ---------- */
+function homeDoDia(data){
+  var r = ckResp(), out = [];
+  ['social', 'trafego'].forEach(function(q){
+    tarDoDia(data, q).forEach(function(t){ out.push(Object.assign({}, t, { q: q, data: data, resp: r[q] || '' })); });
+  });
+  ckRotinaDoDia(data).forEach(function(t){ out.push(Object.assign({}, t, { data: data })); });
+  return out;
+}
+function homeVisivel(t){
+  if(HOME.agenda === 'todos') return true;
+  var alvo = HOME.agenda === 'eu' ? chaveEmail(EMAIL) : HOME.agenda;
+  /* sem responsável definido: aparece para os administradores na própria agenda */
+  return t.resp ? t.resp === alvo : (HOME.agenda === 'eu' && euSouAdmin());
+}
+function homeAgenda(){
+  var hoje = tarHoje(), lista = homeDoDia(hoje).filter(homeVisivel);
+  var atras = [];
+  for(var i = HOME_ATRASO_DIAS; i >= 1; i--){
+    homeDoDia(addDias(hoje, -i)).forEach(function(t){ if(!t.feita && homeVisivel(t)) atras.push(t); });
+  }
+  return { hoje: lista, atrasadas: atras };
+}
+
+/* marca a tarefa no quadro certo */
+function homeMarca(q, data, chave, feito, auto){
+  if(q === 'rel') return ckRotinaMarca(data, chave, feito, auto);
   TAR.q = q;
   tarMarca(data, chave, feito);
 }
+function homeAgendaTroca(v){ HOME.agenda = v; render(); }
 
 /* ---------- tela ---------- */
 function vHome(){
   var hoje = tarHoje();
   tarLiga('social'); tarLiga('trafego'); salLiga();
 
-  var soc = tarDoDia(hoje, 'social'), trf = tarDoDia(hoje, 'trafego');
-  var feitas = function(ts){ return ts.filter(function(t){ return t.feita; }).length; };
+  var ag = homeAgenda();
   var baixas = salContas().filter(function(c){ return c.ativo !== false && salSit(c) === 'baixo'; });
   var erros = salContas().filter(function(c){ return c.ativo !== false && salSit(c) === 'erro'; });
   var uv = (SAL.d || {}).ultimaVerificacao;
-  var tot = soc.length + trf.length, fe = feitas(soc) + feitas(trf);
-  var nome = homeNome();
+  var nome = homeNome(), r = ckResp();
+  var semResp = euSouAdmin() && !(r.social || r.trafego || r.relatorios);
 
   return '' +
-  '<div class="hd"><div><h1>' + homeSaudacao() + (nome ? ', ' + esc(nome) : '') + '</h1>' +
-    '<p>' + esc(tarDiaLabel(hoje).charAt(0).toUpperCase() + tarDiaLabel(hoje).slice(1)) + ' · o que precisa de atenção hoje</p></div></div>' +
+  '<div class="hd"><div><h1>' + homeSaudacao() + (nome ? ', ' + esc(nome) : '') + '!</h1>' +
+    '<p>' + esc(tarDiaLabel(hoje).charAt(0).toUpperCase() + tarDiaLabel(hoje).slice(1)) + '</p></div>' +
+    '<div class="hd-act">' + (ag.atrasadas.length ? '<span class="pill p-cr" style="padding:7px 12px;font-size:12.5px">🔔 ' + ag.atrasadas.length + ' atrasada(s)</span>' : '') +
+      (euSouAdmin() ? '<button class="btn" onclick="mCkResponsaveis()">Responsáveis</button>' : '') + '</div></div>' +
 
-  '<div class="grid g4 mb12">' +
-    kpi('Tarefas de hoje', fe + ' de ' + tot, tot ? (tot - fe ? (tot - fe) + ' pendente(s)' : 'Tudo concluído') : 'Nenhuma tarefa hoje', tot && fe === tot ? 'pos' : (tot ? 'warn' : '')) +
-    kpi('Social media', feitas(soc) + ' de ' + soc.length, 'Tarefas feitas hoje', soc.length && feitas(soc) === soc.length ? 'pos' : '') +
-    kpi('Tráfego', feitas(trf) + ' de ' + trf.length, 'Tarefas feitas hoje', trf.length && feitas(trf) === trf.length ? 'pos' : '') +
-    kpi('Saldo abaixo do mínimo', String(baixas.length), baixas.length ? 'Conta(s) precisando de recarga' : 'Todas as contas acima do mínimo', baixas.length ? 'neg' : 'pos') +
-  '</div>' +
+  (semResp ? '<div class="note">Defina quem cuida de cada frente (tráfego, social media e rotina de relatórios) para cada pessoa ver só as suas tarefas. ' +
+    '<button class="btn btn-s btn-p" style="margin-left:6px" onclick="mCkResponsaveis()">Definir responsáveis</button></div>' : '') +
 
-  '<div class="grid g2 mb12">' +
-    homeTarefas('social', 'Tarefas de social media', soc, hoje, 'tarefas') +
-    homeTarefas('trafego', 'Tarefas de tráfego', trf, hoje, 'trafego') +
-  '</div>' +
-
-  homeSaldo(baixas, erros, uv);
+  '<div class="hm-g">' + homeTarefasHTML(ag, hoje) + homeAlertasHTML(baixas, erros, uv) + '</div>';
 }
 
-function homeTarefas(q, titulo, ts, hoje, tela){
-  var fe = ts.filter(function(t){ return t.feita; }).length;
-  var pct = ts.length ? Math.round(fe / ts.length * 100) : 0;
+function homeTarefasHTML(ag, hoje){
+  var todas = ag.atrasadas.concat(ag.hoje);
+  var feitasHoje = ag.hoje.filter(function(t){ return t.feita; }).length;
   var grupos = {}, ordem = [];
-  ts.forEach(function(t){ if(!grupos[t.clienteId]){ grupos[t.clienteId] = []; ordem.push(t.clienteId); } grupos[t.clienteId].push(t); });
+  todas.forEach(function(t){ var k = t.clienteId || '_'; if(!grupos[k]){ grupos[k] = []; ordem.push(k); } grupos[k].push(t); });
+  /* clientes com atrasadas primeiro */
+  ordem.sort(function(a, b){
+    var at = function(k){ return grupos[k].some(function(t){ return t.data < hoje; }) ? 0 : 1; };
+    return at(a) - at(b) || String(grupos[a][0].cliente).localeCompare(String(grupos[b][0].cliente), 'pt-BR');
+  });
 
-  var lista = ordem.map(function(cid){
-    return '<div class="tar-cli">' + esc(grupos[cid][0].cliente) + '</div>' + grupos[cid].map(function(t){
-      var hora = t.feita ? new Date(t.feita.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
-      return '<div class="tar-t' + (t.feita ? ' ok' : '') + '">' +
-        '<button class="tar-ck" aria-label="' + (t.feita ? 'Desmarcar' : 'Marcar como feita') + '" onclick="homeMarca(\'' + q + '\',\'' + hoje + '\',\'' + esc(t.chave) + '\',' + (t.feita ? 'false' : 'true') + ')">✓</button>' +
-        '<div style="min-width:0"><div><span class="tar-tt">' + esc(t.titulo) + '</span>' +
-          (q === 'social' ? '<span class="tar-tag ' + (t.fixa ? 'f">fixa' : 'a">avulsa') + '</span>' : '') + '</div>' +
-          (t.feita ? '<div class="sub">feita às ' + hora + (t.feita.por ? ' · ' + esc(String(t.feita.por).split('@')[0]) : '') + '</div>' : '') + '</div></div>';
-    }).join('');
+  var us = ckUsuarios();
+  var seletor = '<select class="fi" style="width:auto;padding:6px 10px;font-size:12.5px" onchange="homeAgendaTroca(this.value)">' +
+    '<option value="eu"' + (HOME.agenda === 'eu' ? ' selected' : '') + '>Minha agenda</option>' +
+    us.filter(function(u){ return u.k !== chaveEmail(EMAIL); }).map(function(u){ return '<option value="' + esc(u.k) + '"' + (HOME.agenda === u.k ? ' selected' : '') + '>Agenda de ' + esc(u.nome) + '</option>'; }).join('') +
+    '<option value="todos"' + (HOME.agenda === 'todos' ? ' selected' : '') + '>Toda a equipe</option></select>';
+
+  var lista = ordem.map(function(k){
+    var ts = grupos[k], pend = ts.filter(function(t){ return !t.feita; }).length;
+    return '<div class="tar-cli flx sp"><span>' + esc(ts[0].cliente) + '</span>' +
+      '<span style="font-size:11.5px;font-family:var(--body);font-weight:500">' + (pend ? '<span class="dot" style="background:var(--coral);margin-right:5px"></span>' + pend + ' pendente(s)' : '✓ tudo feito') + '</span></div>' +
+      ts.map(function(t){
+        var at = t.data < hoje && !t.feita;
+        var hora = t.feita && t.feita.em ? new Date(t.feita.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+        return '<div class="tar-t' + (t.feita ? ' ok' : '') + (at ? ' at' : '') + '">' +
+          '<button class="tar-ck" aria-label="' + (t.feita ? 'Desmarcar' : 'Marcar como feita') + '" onclick="homeMarca(\'' + t.q + '\',\'' + t.data + '\',\'' + esc(t.chave) + '\',' + (t.feita ? 'false' : 'true') + ',' + !!(t.feita && t.feita.auto) + ')">✓</button>' +
+          '<div style="min-width:0"><div class="tar-tt">' + esc(t.titulo) + '</div>' +
+            '<div class="hm-tags"><span class="hm-tag">' + HOME_ORIGEM[t.q] + '</span>' +
+              (at ? '<span class="hm-tag at">Atrasado · ' + esc(tarDiaLabel(t.data).replace(/-feira/, '')) + '</span>' : '') +
+              (HOME.agenda === 'todos' ? '<span class="hm-tag">' + esc(t.resp ? ckNomeUsuario(t.resp) : 'sem responsável') + '</span>' : '') + '</div>' +
+            (t.feita ? '<div class="sub">' + (t.feita.auto ? 'marcada pelo download' : 'feita às ' + hora + (t.feita.por ? ' · ' + esc(String(t.feita.por).split('@')[0]) : '')) + '</div>' : '') +
+          '</div></div>';
+      }).join('');
   }).join('');
 
-  return '<div class="tw"><div class="tw-hd"><div class="tw-t">' + titulo + '</div>' +
-      '<span class="pill ' + (!ts.length ? 'p-off' : (fe === ts.length ? 'p-on' : 'p-av')) + '">' + fe + ' de ' + ts.length + ' feitas</span></div>' +
-    (ts.length ? '<div style="padding:10px 16px 2px"><div class="bar"><i style="width:' + pct + '%;background:var(--mint)"></i></div></div><div class="hm-l">' + lista + '</div>'
-               : '<div class="empty"><b>Nenhuma tarefa hoje</b>As tarefas do dia aparecem aqui.</div>') +
-    '<div class="hm-f"><span class="sub" style="margin:0">' + (ts.length && fe === ts.length ? '🎉 Tudo concluído' : (ts.length ? (ts.length - fe) + ' pendente(s)' : '')) + '</span>' +
-      '<button class="btn btn-s" onclick="go(\'' + tela + '\')">Abrir ' + (q === 'social' ? 'social media' : 'tráfego') + ' →</button></div>' +
+  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Tarefas do dia</div><div class="flx" style="gap:8px">' + seletor +
+      '<span class="pill ' + (!ag.hoje.length ? 'p-off' : (feitasHoje === ag.hoje.length ? 'p-on' : 'p-av')) + '">' + feitasHoje + ' de ' + ag.hoje.length + ' hoje</span></div></div>' +
+    (todas.length ? '<div class="hm-l">' + lista + '</div>'
+      : '<div class="empty"><b>Nenhuma tarefa ' + (HOME.agenda === 'todos' ? 'hoje' : 'nesta agenda hoje') + ' 🎉</b>As tarefas do dia e as atrasadas aparecem aqui.</div>') +
+    '<div class="hm-f"><span class="sub" style="margin:0">' + (ag.atrasadas.length ? ag.atrasadas.length + ' atrasada(s) dos últimos ' + HOME_ATRASO_DIAS + ' dias' : 'Nada atrasado') + '</span>' +
+      '<span class="flx" style="gap:6px"><button class="btn btn-s" onclick="go(\'trafego\')">Tráfego →</button><button class="btn btn-s" onclick="go(\'tarefas\')">Social media →</button><button class="btn btn-s" onclick="go(\'rel\')">Relatórios →</button></span></div>' +
     '</div>';
 }
 
-function homeSaldo(baixas, erros, uv){
-  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Saldo abaixo do mínimo</div>' +
-      (baixas.length ? '<span class="pill p-cr">' + baixas.length + '</span>' : '<span class="pill p-on">tudo certo</span>') + '</div>' +
-    (baixas.length ? '<div class="pg" style="padding:12px">' + baixas.map(salCard).join('') + '</div>'
-      : '<div class="empty"><b>Nenhuma conta abaixo do mínimo</b>Quando um saldo baixar do mínimo configurado, a conta aparece aqui.</div>') +
+function homeAlertasHTML(baixas, erros, uv){
+  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Alertas</div>' +
+      (baixas.length ? '<span class="pill p-cr">' + baixas.length + ' saldo(s) baixo(s)</span>' : '<span class="pill p-on">tudo certo</span>') + '</div>' +
+    (baixas.length ? '<div class="fl" style="padding:12px 16px 0">Saldo abaixo do mínimo</div><div class="pg" style="padding:10px 12px 12px">' + baixas.map(salCard).join('') + '</div>'
+      : '<div class="empty"><b>Nenhum alerta</b>Quando um saldo de anúncio baixar do mínimo configurado, a conta aparece aqui.</div>') +
     (erros.length ? '<div class="note" style="margin:0 12px 12px">' + erros.length + ' conta(s) com erro na leitura do saldo: ' +
       erros.map(function(c){ return esc((S.clientes[c.clienteId] || {}).nome || c.nome || c.id); }).join(', ') + '. O saldo delas pode estar baixo sem aparecer aqui.</div>' : '') +
     '<div class="hm-f"><span class="sub" style="margin:0">' + (uv ? 'Última verificação ' + salHa(uv.em) : 'Nenhuma verificação ainda') + '</span>' +

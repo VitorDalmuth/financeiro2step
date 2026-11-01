@@ -495,7 +495,9 @@ function vRelRelatorio(id, ini){
       '<div class="hint mt12">▲ ▼ mudam a ordem das métricas (vale para os próximos relatórios deste cliente). Mudou um número? Os que dependem dele se ajustam sozinhos; o ↺ volta ao valor da plataforma.</div>' +
       relBrutoHTML(s) +
       '<div class="flx mt18" style="justify-content:flex-end"><button class="btn btn-s btn-d" onclick="relExclui(\'' + esc(id) + '\',\'' + ini + '\')">Excluir este relatório</button></div>' +
-    '</div></div>';
+    '</div></div>' +
+    /* checklist da semana (checklist.js) */
+    (typeof relChecklistHTML === 'function' ? relChecklistHTML(id, ini) : '');
 }
 /* o que a Meta devolveu na última vez que os dados foram puxados (para conferir nomes de métricas) */
 function relBrutoTexto(s){

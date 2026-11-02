@@ -22,7 +22,6 @@
 var CK = { d: null, id: '', ini: '', rotina: {}, ligado: false };
 var CK_ST = { ok: 'Concluído', and: 'Em andamento', pen: 'Pendente' };
 var CK_ORDEM = ['ok', 'and', 'pen'];
-var CK_COR = { ok: '#22C55E', and: '#F59E0B', pen: '#EF4444', alvo: '#EF4444' };
 var CK_ROTINA = [['relatorio', 'Enviar relatório'], ['checklist', 'Enviar checklist'], ['audio', 'Enviar áudio']];
 var CK_FRENTES = [['relatorios', 'Rotina de relatórios (segunda)'], ['trafego', 'Tarefas de tráfego'], ['social', 'Tarefas de social media']];
 
@@ -88,7 +87,7 @@ function ckNovo(id, ini){
   var feitas = ckFeitasNoPeriodo(id, p.de, p.ate);
   var cli = ckPendentesAnteriores(id, ini);
   return {
-    dataHora: '', intro: '', aviso: '',
+    dataHora: '', intro: 'Checklist de Tarefas Semanal', aviso: '',
     tituloCliente: (REL.cfg[id] || {}).tituloChecklist || relNome(id),
     nos: feitas.length ? feitas.map(function(t){ return { s: 'ok', t: t }; }) : [{ s: 'ok', t: '' }],
     cliente: cli.length ? cli : [{ s: 'pen', t: '' }],
@@ -116,8 +115,7 @@ function mCkEditar(id, ini){
   if(!CK.d.proximos.length) CK.d.proximos.push({ t: '' });
   mCkRender();
 }
-function ckIcone(s){ return '<i style="background:' + CK_COR[s] + '"></i>'; }
-function ckIconeHTML(s){ return s === 'and' ? '⏳' : ckIcone(s); }
+function ckIconeHTML(s){ return { ok: '🟢', and: '⏳', pen: '🔴' }[s] || '🟢'; }
 function ckLinhas(sec, comStatus){
   return CK.d[sec].map(function(it, i){
     return '<div class="ck-row">' +
@@ -139,7 +137,7 @@ function mCkRender(){
     '<div class="fg"><label class="fl">Data/hora</label><input type="datetime-local" class="fi" value="' + esc(d.dataHora) + '" oninput="CK.d.dataHora=this.value"></div>' +
     '<div class="fg"><label class="fl">Introdução (opcional)</label><textarea class="fi" placeholder="Texto de introdução..." oninput="CK.d.intro=this.value">' + esc(d.intro) + '</textarea></div>' +
     '<div class="fg"><label class="fl">⚠️ Aviso (opcional)</label><textarea class="fi ck-av" placeholder="Avisos importantes..." oninput="CK.d.aviso=this.value">' + esc(d.aviso) + '</textarea></div>' +
-    '<div class="ck-sec"><div class="ck-tit">2STEP MÍDIA <span class="ck-req">*</span></div>' + ckLinhas('nos', true) + '</div>' +
+    '<div class="ck-sec"><div class="ck-tit">2STEP MIDIA <span class="ck-req">*</span></div>' + ckLinhas('nos', true) + '</div>' +
     '<div class="ck-sec"><div class="ck-tit"><input value="' + esc(d.tituloCliente) + '" maxlength="60" title="Nome que aparece na imagem" oninput="CK.d.tituloCliente=this.value"> <span style="font-size:11px;color:var(--mute2);font-weight:500">✎</span></div>' + ckLinhas('cliente', true) +
       '<div class="hint">O que o cliente precisa fazer. O que não estiver 🟢 passa para o checklist da semana seguinte.</div></div>' +
     '<div class="ck-sec"><div class="ck-tit">Próximo Passo <span class="ck-req">*</span></div>' + ckLinhas('proximos', false) + '</div>' +
@@ -155,7 +153,7 @@ function ckSalvar(){
   var d = CK.d;
   function limpa(l, comS){ return l.map(function(x){ var t = String(x.t || '').trim(); return t ? (comS ? { s: x.s || 'ok', t: t } : { t: t }) : null; }).filter(Boolean); }
   var nos = limpa(d.nos, true), cli = limpa(d.cliente, true), prox = limpa(d.proximos, false);
-  if(!nos.length) return toast('Escreva pelo menos um item em 2STEP MÍDIA', 'err');
+  if(!nos.length) return toast('Escreva pelo menos um item em 2STEP MIDIA', 'err');
   if(!prox.length) return toast('Escreva pelo menos um próximo passo', 'err');
   var antes = ckDados(CK.id, CK.ini) || {};
   var c = { dataHora: d.dataHora || ckAgora(), intro: String(d.intro || '').trim(), aviso: String(d.aviso || '').trim(),
@@ -192,132 +190,86 @@ function ckQuebra(ctx, txt, larg){
   });
   return out;
 }
-function ckDesenhaIcone(ctx, s, x, y, r){
-  ctx.save();
-  if(s === 'alvo'){
-    [[r, '#EF4444'], [r * .68, '#FFFFFF'], [r * .4, '#EF4444']].forEach(function(c){ ctx.beginPath(); ctx.arc(x, y, c[0], 0, Math.PI * 2); ctx.fillStyle = c[1]; ctx.fill(); });
-    ctx.restore(); return;
-  }
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = CK_COR[s]; ctx.fill();
-  ctx.strokeStyle = '#FFFFFF'; ctx.fillStyle = '#FFFFFF'; ctx.lineWidth = r * .2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  if(s === 'ok'){
-    ctx.beginPath(); ctx.moveTo(x - r * .45, y + r * .02); ctx.lineTo(x - r * .1, y + r * .38); ctx.lineTo(x + r * .48, y - r * .34); ctx.stroke();
-  }else if(s === 'and'){
-    /* ampulheta */
-    var w = r * .42, h = r * .55;
-    ctx.beginPath(); ctx.moveTo(x - w, y - h); ctx.lineTo(x + w, y - h); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(x - w, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
-  }else{
-    ctx.beginPath(); ctx.moveTo(x, y - r * .45); ctx.lineTo(x, y + r * .08); ctx.stroke();
-    ctx.beginPath(); ctx.arc(x, y + r * .38, r * .1, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-}
-function ckAviso(ctx, x, y, r){
-  ctx.save(); ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r * 1.1, y + r * .8); ctx.lineTo(x - r * 1.1, y + r * .8); ctx.closePath();
-  ctx.fillStyle = '#B45309'; ctx.fill(); ctx.fillStyle = '#FFFFFF'; ctx.font = '700 ' + Math.round(r * 1.1) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', x, y + r * .62); ctx.restore();
-}
-function ckDataHoraTexto(dh){
-  if(!dh) return '';
-  var a = dh.split('T'), d = a[0].split('-');
-  return 'Atualizado em ' + d[2] + '/' + d[1] + '/' + d[0] + (a[1] ? ' às ' + a[1].slice(0, 5) : '');
+/* Mesmo padrão da imagem que a 2STEP já manda aos clientes: cartão claro,
+   "data | dia da semana", "Atualização semanal", seções em maiúsculas com
+   linha embaixo e os ícones 🟢 🔴 ⏳ 🎯. Desenhada em 2x para ficar nítida. */
+var CK_EMOJI = { ok: '🟢', pen: '🔴', and: '⏳', alvo: '🎯' };
+var CK_DIAS = ['Domingo', 'Segunda-Feira', 'Terça-Feira', 'Quarta-Feira', 'Quinta-Feira', 'Sexta-Feira', 'Sábado'];
+function ckTitulo(dh){
+  var d = String(dh || '').slice(0, 10) || tarHoje(), p = d.split('-');
+  return p[2] + '/' + p[1] + '/' + p[0] + ' | ' + CK_DIAS[new Date(d + 'T12:00:00').getDay()];
 }
 function ckDesenha(id, ini){
-  var c = REL.cfg[id], s = ckSemana(id, ini), d = ckDados(id, ini);
-  var DISP = "'Space Grotesk', sans-serif", CORPO = "'Plus Jakarta Sans', sans-serif";
+  var d = ckDados(id, ini);
+  var FONTE = "'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif";
+  var EMOJI = "'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
   var fontes = document.fonts && document.fonts.load ? Promise.all([
-    document.fonts.load('700 40px "Space Grotesk"'), document.fonts.load('500 24px "Plus Jakarta Sans"'), document.fonts.load('700 24px "Plus Jakarta Sans"')
+    document.fonts.load('400 16px "Plus Jakarta Sans"'), document.fonts.load('600 16px "Plus Jakarta Sans"'), document.fonts.load('700 16px "Plus Jakarta Sans"')
   ]).catch(function(){}) : Promise.resolve();
-  return Promise.all([fontes, relImg(c && c.logo)]).then(function(r){
-    var logo = r[1], W = 1080, P = 72, LARG = W - 2 * P;
+  return fontes.then(function(){
+    var K = 2, W = 700, PX = 30, TX = 61, LARG = W - TX - PX;
     var secoes = [
-      { tit: '2STEP MÍDIA', itens: d.nos.map(function(x){ return { s: x.s, t: x.t }; }) },
-      { tit: d.tituloCliente, itens: d.cliente.map(function(x){ return { s: x.s, t: x.t }; }) },
-      { tit: 'Próximo passo', itens: d.proximos.map(function(x){ return { s: 'alvo', t: x.t }; }) }
+      { tit: '2STEP MIDIA', itens: d.nos },
+      { tit: d.tituloCliente, itens: d.cliente },
+      { tit: 'PRÓXIMO PASSO', itens: d.proximos.map(function(x){ return { s: 'alvo', t: x.t }; }) }
     ].filter(function(x){ return x.itens.length; });
 
-    /* passa duas vezes: a primeira só mede a altura, a segunda desenha */
+    /* duas passadas: a primeira mede a altura, a segunda desenha */
     function desenha(ctx, pinta){
-      var y;
-      if(pinta){ ctx.fillStyle = REL_COR.fundo; ctx.fillRect(0, 0, W, ctx.canvas.height); }
-      ctx.textBaseline = 'alphabetic';
-      var LOGO = 150, largTexto = LARG - (logo ? LOGO + 30 : 0);
+      var y = 0;
+      function linha(y0){ if(pinta){ ctx.fillStyle = '#E3E3E3'; ctx.fillRect(PX, y0, W - 2 * PX, 1); } }
+      function texto(t, x, yb, fonte, cor){ if(pinta){ ctx.font = fonte; ctx.fillStyle = cor; ctx.fillText(t, x, yb); } }
+
       if(pinta){
-        ctx.fillStyle = REL_COR.claro; ctx.font = '500 26px ' + CORPO; ctx.fillText('2STEP · Atualização semanal', P, P + 26);
-        ctx.fillStyle = '#FFFFFF'; relCabe(ctx, relNome(id), '700', 58, DISP, largTexto, 30); ctx.fillText(relNome(id), P, P + 100);
-        var per = relPeriodoTexto(s, ini);
-        ctx.fillStyle = REL_COR.claro; relCabe(ctx, per, '500', 28, CORPO, largTexto, 18); ctx.fillText(per, P, P + 148);
-        var dh = ckDataHoraTexto(d.dataHora);
-        if(dh){ ctx.font = '500 22px ' + CORPO; ctx.fillText(dh, P, P + 184); }
-        if(logo){
-          var lx = W - P - LOGO, ly = P;
-          ctx.fillStyle = '#FFFFFF'; relRR(ctx, lx, ly, LOGO, LOGO, 28); ctx.fill();
-          var k = Math.min((LOGO - 28) / logo.width, (LOGO - 28) / logo.height);
-          ctx.drawImage(logo, lx + (LOGO - logo.width * k) / 2, ly + (LOGO - logo.height * k) / 2, logo.width * k, logo.height * k);
-        }
+        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, W, ctx.canvas.height / K);
+        ctx.fillStyle = '#F7F7F7'; relRR(ctx, 0.5, 0.5, W - 1, ctx.canvas.height / K - 1, 12); ctx.fill();
+        ctx.strokeStyle = '#E6E6E6'; ctx.lineWidth = 1; ctx.stroke();
       }
-      y = P + 222;
+      ctx.textBaseline = 'alphabetic';
+      texto(ckTitulo(d.dataHora), PX, 44, '700 19px ' + FONTE, '#1F1F1F');
+      texto('Atualização semanal', PX, 73, '400 15px ' + FONTE, '#6B6B6B');
+      linha(97);
+      y = 97;
 
       if(d.intro){
-        ctx.font = '500 27px ' + CORPO;
-        ckQuebra(ctx, d.intro, LARG).forEach(function(l){ if(pinta){ ctx.fillStyle = '#FFFFFF'; ctx.fillText(l, P, y + 28); } y += 40; });
-        y += 22;
+        ctx.font = '400 16px ' + FONTE;
+        y += 14;
+        ckQuebra(ctx, d.intro, W - 2 * PX).forEach(function(l){ y += 27; texto(l, PX, y, '400 16px ' + FONTE, '#222222'); });
       }
       if(d.aviso){
-        ctx.font = '600 26px ' + CORPO;
-        var la = ckQuebra(ctx, d.aviso, LARG - 56), ha = 72 + la.length * 38 + 10;
-        if(pinta){
-          ctx.fillStyle = '#FEF3C7'; relRR(ctx, P, y, LARG, ha, 22); ctx.fill();
-          ckAviso(ctx, P + 42, y + 40, 15);
-          ctx.fillStyle = '#92400E'; ctx.font = '700 26px ' + CORPO; ctx.fillText('Aviso', P + 68, y + 50);
-          ctx.fillStyle = '#78350F'; ctx.font = '600 26px ' + CORPO;
-          la.forEach(function(l, i){ ctx.fillText(l, P + 28, y + 96 + i * 38); });
-        }
-        y += ha + 26;
+        ctx.font = '600 15px ' + FONTE;
+        var la = ckQuebra(ctx, '⚠️ ' + d.aviso, W - 2 * PX - 28), ha = la.length * 23 + 22;
+        y += 18;
+        if(pinta){ ctx.fillStyle = '#FFF6DB'; relRR(ctx, PX, y, W - 2 * PX, ha, 8); ctx.fill(); ctx.strokeStyle = '#F2D27A'; ctx.lineWidth = 1; ctx.stroke(); }
+        la.forEach(function(l, i){ texto(l, PX + 14, y + 27 + i * 23, '600 15px ' + FONTE, '#7A5300'); });
+        y += ha;
       }
 
       secoes.forEach(function(sec){
-        ctx.font = '700 26px ' + CORPO;
-        var largPill = Math.min(LARG, ctx.measureText(sec.tit).width + 44);
-        if(pinta){
-          ctx.fillStyle = '#FFFFFF'; relRR(ctx, P, y, largPill, 52, 26); ctx.fill();
-          ctx.fillStyle = REL_COR.fundo; relCabe(ctx, sec.tit, '700', 26, CORPO, largPill - 44, 16); ctx.fillText(sec.tit, P + 22, y + 35);
-        }
-        y += 52 + 16;
-        ctx.font = '500 27px ' + CORPO;
-        var linhas = sec.itens.map(function(it){ return ckQuebra(ctx, it.t, LARG - 2 * 28 - 56); });
-        var hb = 26 + linhas.reduce(function(a, l){ return a + Math.max(1, l.length) * 38 + 20; }, 0) + 6;
-        if(pinta){ ctx.fillStyle = REL_COR.caixa; relRR(ctx, P, y, LARG, hb, 22); ctx.fill(); }
-        var yy = y + 26;
+        y += 50;
+        ctx.font = '700 15px ' + FONTE;
+        var tit = String(sec.tit || '').toUpperCase() + ':';
+        var tamT = 15;
+        while(tamT > 11 && ctx.measureText(tit).width > W - 2 * PX){ tamT--; ctx.font = '700 ' + tamT + 'px ' + FONTE; }
+        texto(tit, PX, y, '700 ' + tamT + 'px ' + FONTE, '#1F1F1F');
+        y += 10; linha(y);
+        y += 1;
+        ctx.font = '400 16px ' + FONTE;
         sec.itens.forEach(function(it, i){
-          if(pinta){
-            ckDesenhaIcone(ctx, it.s, P + 28 + 18, yy + 19, 18);
-            ctx.fillStyle = '#FFFFFF'; ctx.font = '500 27px ' + CORPO;
-            linhas[i].forEach(function(l, k){ ctx.fillText(l, P + 28 + 56, yy + 29 + k * 38); });
-          }
-          yy += Math.max(1, linhas[i].length) * 38 + 20;
+          var ls = ckQuebra(ctx, it.t, LARG);
+          y += i ? 33 : 27;
+          if(pinta){ ctx.font = '16px ' + EMOJI; ctx.fillStyle = '#000000'; ctx.fillText(CK_EMOJI[it.s] || CK_EMOJI.ok, PX + 1, y); }
+          ls.forEach(function(l, k){ texto(l, TX, y + k * 24, '400 16px ' + FONTE, '#222222'); });
+          y += (ls.length - 1) * 24;
         });
-        y += hb + 30;
       });
-
-      /* legenda */
-      var leg = [['ok', CK_ST.ok], ['and', CK_ST.and], ['pen', CK_ST.pen]];
-      if(pinta){
-        var x = P;
-        ctx.font = '500 22px ' + CORPO;
-        leg.forEach(function(l){
-          ckDesenhaIcone(ctx, l[0], x + 13, y + 14, 13);
-          ctx.fillStyle = REL_COR.claro; ctx.fillText(l[1], x + 34, y + 22);
-          x += 34 + ctx.measureText(l[1]).width + 30;
-        });
-      }
-      y += 30;
-      return y + P - 20;
+      return y + 35;
     }
     var med = document.createElement('canvas').getContext('2d');
     var H = Math.ceil(desenha(med, false));
-    var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-    desenha(cv.getContext('2d'), true);
+    var cv = document.createElement('canvas'); cv.width = W * K; cv.height = H * K;
+    var ctx = cv.getContext('2d'); ctx.scale(K, K);
+    desenha(ctx, true);
     return cv;
   });
 }
@@ -374,7 +326,7 @@ function relChecklistHTML(id, ini){
   if(d) setTimeout(function(){ ckPreview(id, ini); }, 0);
   var pill = !d ? '<span class="pill p-off">não preenchido</span>' : (d.enviadoEm ? '<span class="pill p-on">baixado em ' + dLabel(d.enviadoEm.slice(0, 10)) + '</span>' : '<span class="pill p-av">preenchido</span>');
   var resumo = d ? '<div style="font-size:13px;line-height:1.8">' +
-      '<div><span style="color:var(--mute)">2STEP MÍDIA:</span> ' + d.nos.length + ' item(ns)</div>' +
+      '<div><span style="color:var(--mute)">2STEP MIDIA:</span> ' + d.nos.length + ' item(ns)</div>' +
       '<div><span style="color:var(--mute)">' + esc(d.tituloCliente) + ':</span> ' + d.cliente.length + ' item(ns)' +
         (d.cliente.filter(function(x){ return x.s !== 'ok'; }).length ? ' · <b class="warn">' + d.cliente.filter(function(x){ return x.s !== 'ok'; }).length + ' pendente(s)</b>' : '') + '</div>' +
       '<div><span style="color:var(--mute)">Próximo passo:</span> ' + d.proximos.length + ' item(ns)</div></div>'

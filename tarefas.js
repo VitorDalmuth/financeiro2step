@@ -27,9 +27,14 @@ var TAR_Q = {
     titulo: 'Tarefas de tráfego',
     sub: 'Tarefas do time de tráfego, por dia e por cliente. O grupo do WhatsApp recebe as tarefas do dia e as pendências.',
     botaoEnvio: 'Enviar pendências no grupo'
+  },
+  /* tarefas avulsas da tela inicial: de uma pessoa, com ou sem cliente, sem WhatsApp */
+  pessoal: {
+    raiz: 'tarefasPessoais', v: 'home', menu: '', rotinas: false, pessoal: true,
+    titulo: 'Tarefas avulsas', sub: '', botaoEnvio: ''
   }
 };
-var TAR = { q: 'social', dados: { social: {}, trafego: {} }, ligados: {}, inicioGravado: {}, dia: '', mes: '', ocupado: '', r: null };
+var TAR = { q: 'social', dados: { social: {}, trafego: {}, pessoal: {} }, ligados: {}, inicioGravado: {}, dia: '', mes: '', ocupado: '', r: null };
 var TAR_PADRAO = { post: { tipo: 'Post', dias: [1, 3, 5] }, stories: { tipo: 'Stories', dias: [2, 4] } };
 var TAR_SEM = ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 var TAR_SEML = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
@@ -63,6 +68,8 @@ var TAR_MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Ju
   '.tar-dias button.on{border-color:var(--volt);background:var(--volt-dim);color:var(--ink)}' +
   '.tar-it{background:var(--slab2);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px}' +
   '.tar-pe{display:flex;gap:8px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line)}' +
+  '.tar-cli a{color:inherit;text-decoration:none;border-bottom:1px dashed var(--line2);cursor:pointer}' +
+  '.tar-cli a:hover{color:var(--volt);border-bottom-color:var(--volt)}' +
   '@media(max-width:820px){.tar-d{min-height:46px;padding:4px}.tar-q{font-size:10px;padding:0 4px}.tar-h{font-size:9px;letter-spacing:0}}';
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
 })();
@@ -84,7 +91,7 @@ function tarLiga(q){
   ouve(TAR_Q[q].raiz, function(v){
     TAR.dados[q] = v;
     /* marca o primeiro dia: antes dele a rotina não gera tarefas atrasadas */
-    if(euSouAdmin() && !(v.config || {}).inicio && !TAR.inicioGravado[q]){
+    if(!TAR_Q[q].pessoal && euSouAdmin() && !(v.config || {}).inicio && !TAR.inicioGravado[q]){
       TAR.inicioGravado[q] = true;
       DB.ref(ROOT + '/' + TAR_Q[q].raiz + '/config/inicio').set(tarHoje());
     }
@@ -120,7 +127,8 @@ function tarDoDia(data, q){
   Object.keys(av).forEach(function(k){
     var a = av[k];
     if(!a || a.data !== data) return;
-    out.push({ chave: 'a_' + k, id: k, clienteId: a.clienteId, cliente: (S.clientes[a.clienteId] || {}).nome || 'Cliente', titulo: a.titulo || 'Tarefa', fixa: false });
+    out.push({ chave: 'a_' + k, id: k, clienteId: a.clienteId || '', cliente: a.clienteId ? ((S.clientes[a.clienteId] || {}).nome || 'Cliente') : 'Sem cliente',
+      titulo: a.titulo || 'Tarefa', fixa: false, resp: a.resp || '' });
   });
   var f = (D.feitas || {})[data] || {};
   out.forEach(function(t){ t.feita = f[t.chave] || null; });
@@ -128,14 +136,15 @@ function tarDoDia(data, q){
     return String(a.cliente).localeCompare(String(b.cliente), 'pt-BR') || (b.fixa - a.fixa) || String(a.titulo).localeCompare(String(b.titulo), 'pt-BR');
   });
 }
-function tarUpd(caminho, valor){
+function tarUpd(caminho, valor, q){
+  q = q || TAR.q;
   if(MEM || !DB){
-    var ks = caminho.split('/'), o = tarD();
+    var ks = caminho.split('/'), o = tarD(q);
     ks.slice(0, -1).forEach(function(p){ o = o[p] = o[p] || {}; });
     if(valor === null) delete o[ks[ks.length - 1]]; else o[ks[ks.length - 1]] = valor;
     render(); return Promise.resolve();
   }
-  var r = DB.ref(ROOT + '/' + tarQ().raiz + '/' + caminho);
+  var r = DB.ref(ROOT + '/' + TAR_Q[q].raiz + '/' + caminho);
   return valor === null ? r.remove() : r.set(valor);
 }
 function tarBadge(q){ tarLiga(q); return tarDoDia(tarHoje(), q).filter(function(t){ return !t.feita; }).length; }
@@ -159,6 +168,14 @@ function tarMarca(data, chave, feito){
   if(feito) f[chave] = { em: new Date().toISOString(), por: EMAIL || '' }; else delete f[chave];
   render();
   if(MEM) return;
+  /* quadro pessoal não tem WhatsApp: grava direto */
+  if(tarQ().pessoal){
+    tarUpd('feitas/' + data + '/' + chave, feito ? f[chave] : null, TAR.q).then(function(){ if(feito) toast('Tarefa concluída', 'ok'); }, function(e){
+      if(antes) f[chave] = antes; else delete f[chave];
+      render(); toast(e.message, 'err');
+    });
+    return;
+  }
   tarApi('marcar', '&data=' + data + '&chave=' + encodeURIComponent(chave) + '&feito=' + (feito ? 1 : 0)).then(function(j){
     if(j.aviso) toast(j.aviso, 'err'); else if(feito) toast('Tarefa concluída', 'ok');
   }, function(e){
@@ -187,6 +204,7 @@ function tarVaiMes(k){
 function vTarQuadro(q){
   TAR.q = q;
   tarLiga(q);
+  if(q === 'trafego' && typeof salLiga === 'function') salLiga();
   if(!TAR.dia){ TAR.dia = tarHoje(); TAR.mes = TAR.dia.slice(0, 7); }
   var Q = tarQ();
   var aviso = '';
@@ -211,12 +229,15 @@ function tarDiaHTML(dia){
   var grupos = {}, ordem = [];
   ts.forEach(function(t){ if(!grupos[t.clienteId]){ grupos[t.clienteId] = []; ordem.push(t.clienteId); } grupos[t.clienteId].push(t); });
   var lista = ordem.map(function(cid){
-    return '<div class="tar-cli">' + esc(grupos[cid][0].cliente) + '</div>' + grupos[cid].map(function(t){
+    var nomeCli = esc(grupos[cid][0].cliente);
+    if(TAR.q === 'trafego' && cid) nomeCli = '<a href="#" title="Abrir a conta de anúncios" onclick="tarAbreConta(\'' + esc(cid) + '\');return false">' + nomeCli + ' ↗</a>';
+    return '<div class="tar-cli">' + nomeCli + '</div>' + grupos[cid].map(function(t){
       var hora = t.feita ? new Date(t.feita.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
       return '<div class="tar-t' + (t.feita ? ' ok' : '') + '">' +
         '<button class="tar-ck" aria-label="' + (t.feita ? 'Desmarcar' : 'Marcar como feita') + '" onclick="tarMarca(\'' + dia + '\',\'' + esc(t.chave) + '\',' + (t.feita ? 'false' : 'true') + ')">✓</button>' +
         '<div style="min-width:0"><div><span class="tar-tt">' + esc(t.titulo) + '</span>' +
-          (Q.rotinas ? '<span class="tar-tag ' + (t.fixa ? 'f">fixa' : 'a">avulsa') + '</span>' : '') + '</div>' +
+          (Q.rotinas ? '<span class="tar-tag ' + (t.fixa ? 'f">fixa' : 'a">avulsa') + '</span>' : '') +
+          (t.resp && typeof ckNomeUsuario === 'function' && ckNomeUsuario(t.resp) ? '<span class="tar-tag f">' + esc(ckNomeUsuario(t.resp)) + '</span>' : '') + '</div>' +
           (t.feita ? '<div class="sub">feita às ' + hora + (t.feita.por ? ' · ' + esc(String(t.feita.por).split('@')[0]) : '') + '</div>' : '') + '</div>' +
         '<div class="tar-ac"><button class="btn btn-s" onclick="mTarMover(\'' + dia + '\',\'' + esc(t.chave) + '\')">Mover</button>' +
           '<button class="btn btn-s btn-d" onclick="tarTira(\'' + dia + '\',\'' + esc(t.chave) + '\')">Tirar</button></div></div>';
@@ -264,21 +285,87 @@ function mTarAvulsa(data){
   var daLinha = function(c){ return Q.rotinas ? !!c.socialMedia : c.trafego !== false; };
   var cs = listaClientes().filter(function(c){ return c.status !== 'encerrado'; })
     .sort(function(a, b){ return (daLinha(b) - daLinha(a)) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
+  var nTodos = tarTodosClientes().length;
   modal(Q.rotinas ? 'Tarefa avulsa' : 'Nova tarefa de tráfego',
     '<div class="fg"><label class="fl">Cliente</label><select class="fi" id="t_cli"><option value="">Escolha o cliente</option>' +
+      (nTodos ? '<option value="*">★ Todos os clientes de ' + (Q.rotinas ? 'social media' : 'tráfego') + ' (' + nTodos + ')</option>' : '') +
       cs.map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(c.nome) + '</option>'; }).join('') + '</select></div>' +
     '<div class="fg"><label class="fl">O que fazer</label><input class="fi" id="t_tit" maxlength="120" placeholder="' + (Q.rotinas ? 'Gravar vídeo de bastidores' : 'Subir campanha de remarketing') + '"></div>' +
     '<div class="fg"><label class="fl">Dia</label><input type="date" class="fi" id="t_dia" value="' + (data || TAR.dia || tarHoje()) + '"></div>',
     '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="tarSalvaAvulsa()">Adicionar</button>');
   setTimeout(function(){ var e = $('t_tit'); if(e) e.focus(); }, 60);
 }
+/* "todos os clientes": os da linha de serviço do quadro (Social media marcado; ou tráfego não desmarcado) */
+function tarTodosClientes(q){
+  q = q || TAR.q;
+  if(TAR_Q[q].rotinas) return tarClientesSocial();
+  return listaClientes().filter(function(c){ return c.status !== 'encerrado' && c.trafego !== false; });
+}
 function tarSalvaAvulsa(){
   var cli = $('t_cli').value, tit = $('t_tit').value.trim(), dia = $('t_dia').value;
   if(!cli) return toast('Escolha o cliente', 'err');
   if(!tit) return toast('Escreva o que fazer', 'err');
   if(!dia) return toast('Escolha o dia', 'err');
-  tarUpd('avulsas/' + uid(), { clienteId: cli, titulo: tit, data: dia, criadoEm: new Date().toISOString(), criadoPor: EMAIL || '' });
-  fecha(); tarVaiDia(dia); toast('Tarefa adicionada', 'ok');
+  var base = { titulo: tit, data: dia, criadoEm: new Date().toISOString(), criadoPor: EMAIL || '' };
+  var ids = cli === '*' ? tarTodosClientes().map(function(c){ return c.id; }) : [cli];
+  if(!ids.length) return toast('Nenhum cliente nessa lista', 'err');
+  if(ids.length > 1 && !confirm('Criar "' + tit + '" para ' + ids.length + ' clientes em ' + tarDiaLabel(dia) + '?')) return;
+  ids.forEach(function(id){ tarUpd('avulsas/' + uid(), Object.assign({ clienteId: id }, base)); });
+  fecha(); tarVaiDia(dia); toast(ids.length > 1 ? 'Tarefa criada para ' + ids.length + ' clientes' : 'Tarefa adicionada', 'ok');
+}
+
+/* ---------- tráfego: nome do cliente abre a conta de anúncios ---------- */
+/* Meta abre direto pelo número da conta. O Google Ads não abre uma conta pelo número
+   (usa um código interno no endereço), então guardamos o link colado uma vez por conta. */
+function tarContasDe(cid){
+  if(typeof salContas !== 'function') return [];
+  var links = tarD('trafego').links || {};
+  var out = salContas().filter(function(c){ return c.clienteId === cid; }).map(function(c){
+    var g = c.plataforma === 'google' || /^g_/.test(c.id);
+    var num = g ? String(c.googleId || String(c.id).slice(2)) : String(c.id).replace(/^act_/, '');
+    return { chave: c.id, nome: c.nome || c.id, plat: g ? 'Google Ads' : 'Meta Ads', google: g, num: num,
+      url: g ? (links[c.id] || '') : 'https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=' + num };
+  });
+  var extra = links['c_' + cid];
+  if(extra) out.push({ chave: 'c_' + cid, nome: 'Link salvo', plat: 'Outro', url: extra, extra: true });
+  return out;
+}
+function tarAbreConta(cid){
+  var cs = tarContasDe(cid);
+  if(cs.length === 1 && cs[0].url){ window.open(cs[0].url, '_blank', 'noopener'); return; }
+  mTarContas(cid);
+}
+function mTarContas(cid){
+  var cs = tarContasDe(cid), nome = (S.clientes[cid] || {}).nome || 'Cliente';
+  var linhas = cs.filter(function(c){ return !c.extra; }).map(function(c){
+    return '<div class="tar-it"><div class="flx sp" style="flex-wrap:nowrap"><div style="min-width:0"><div class="nm">' + esc(c.nome) + '</div>' +
+        '<div class="sub">' + c.plat + ' · ' + esc(c.num) + '</div></div>' +
+        (c.url ? '<a class="btn btn-s btn-p" href="' + esc(c.url) + '" target="_blank" rel="noopener noreferrer">Abrir ↗</a>' : '<span class="pill p-off">sem link</span>') + '</div>' +
+      (c.google ? '<div class="flx mt12" style="flex-wrap:nowrap"><input class="fi" style="font-size:12px" id="tl_' + esc(c.chave) + '" placeholder="Cole aqui o endereço da conta no Google Ads" value="' + esc(c.url) + '">' +
+        '<button class="btn btn-s" onclick="tarSalvaLink(\'' + esc(cid) + '\',\'' + esc(c.chave) + '\')">Salvar</button></div>' : '') +
+      '</div>';
+  }).join('');
+  var extra = cs.filter(function(c){ return c.extra; })[0];
+  var temGoogle = cs.some(function(c){ return c.google; });
+  modal('Conta de anúncios · ' + esc(nome),
+    (linhas || '<div class="hint" style="margin-bottom:10px">Nenhuma conta de anúncios ligada a este cliente em Saldo Ads. Ligue a conta lá, ou cole abaixo o link que deve abrir.</div>') +
+    (temGoogle ? '<div class="hint" style="margin-bottom:12px">Google Ads: abra a conta deste cliente no <a href="https://ads.google.com/aw/overview" target="_blank" rel="noopener noreferrer" style="color:var(--volt)">Google Ads</a>, copie o endereço da barra do navegador e cole acima. É uma vez só por conta.</div>' : '') +
+    '<div class="fg"><label class="fl">' + (linhas ? 'Outro link (opcional)' : 'Link da conta de anúncios') + '</label><div class="flx" style="flex-wrap:nowrap">' +
+      '<input class="fi" style="font-size:12px" id="tl_c_' + esc(cid) + '" placeholder="https://..." value="' + esc(extra ? extra.url : '') + '">' +
+      '<button class="btn btn-s" onclick="tarSalvaLink(\'' + esc(cid) + '\',\'c_' + esc(cid) + '\')">Salvar</button>' +
+      (extra ? '<a class="btn btn-s btn-p" href="' + esc(extra.url) + '" target="_blank" rel="noopener noreferrer">Abrir ↗</a>' : '') + '</div></div>',
+    '<button class="btn" onclick="fecha()">Fechar</button>');
+}
+function tarSalvaLink(cid, chave){
+  var e = $('tl_' + chave); if(!e) return;
+  var url = e.value.trim();
+  if(url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if(url && !/^https:\/\/[^\s"'<>]+$/i.test(url)) return toast('Link inválido (precisa começar com https://)', 'err');
+  if(!TAR.dados.trafego.links) TAR.dados.trafego.links = {};
+  if(url) TAR.dados.trafego.links[chave] = url; else delete TAR.dados.trafego.links[chave];
+  tarUpd('links/' + chave, url || null, 'trafego').then(function(){}, function(err){ toast(err.message, 'err'); });
+  toast(url ? 'Link salvo' : 'Link removido', 'ok');
+  mTarContas(cid);
 }
 function tarAcha(data, chave){ return tarDoDia(data).filter(function(t){ return t.chave === chave; })[0]; }
 function mTarMover(data, chave){
@@ -400,7 +487,7 @@ function tarViaGrupoHTML(c){
       ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">Criar tarefas por mensagem no grupo</label>' +
     '<div class="hint" style="margin-top:8px">Quem estiver no grupo manda a mensagem neste formato e a tarefa entra sozinha, com confirmação no grupo:</div>' +
     '<pre class="mono" style="font-size:12px;background:var(--slab2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px;white-space:pre-wrap">Cliente: Buffet Solar\nTarefa: Subir campanha de remarketing\nData: amanhã</pre>' +
-    '<div class="hint">"Tarefa:" pode repetir. "Data:" aceita hoje, amanhã, o dia da semana ou 05/11; vazia, entra para hoje.</div>' +
+    '<div class="hint">"Tarefa:" pode repetir. "Data:" aceita hoje, amanhã, o dia da semana ou 05/11; vazia, entra para hoje. "Cliente: todos" cria a tarefa para todos os clientes de tráfego.</div>' +
     '<div class="fl mt12">Endereço para a Z-API (Webhooks › Ao receber)</div>' +
     '<div class="flx" style="flex-wrap:nowrap"><input class="fi mono" style="font-size:11.5px" readonly value="' + esc(url) + '" onclick="this.select()">' +
     '<button class="btn btn-s" onclick="salCopia(\'' + esc(url) + '\')">Copiar</button></div>' +
@@ -472,6 +559,12 @@ function tarTeste(){
 function tarDemo(q){
   var cs = listaClientes().filter(function(c){ return c.status !== 'encerrado'; }).slice(0, 3);
   var hoje = tarHoje();
+  if(q === 'pessoal'){
+    var eu = chaveEmail(EMAIL);
+    TAR.dados.pessoal = { avulsas: { p1: { titulo: 'Ligar para o contador', data: hoje, resp: eu, clienteId: '' } }, feitas: {} };
+    if(cs[2]) TAR.dados.pessoal.avulsas.p2 = { titulo: 'Reunião de alinhamento', data: hoje, resp: eu, clienteId: cs[2].id };
+    return;
+  }
   if(q === 'trafego'){
     var av = {};
     if(cs[0]) av.t1 = { clienteId: cs[0].id, titulo: 'Subir campanha de remarketing', data: hoje };

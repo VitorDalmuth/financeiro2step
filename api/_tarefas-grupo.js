@@ -10,7 +10,8 @@
    - "Tarefa:" pode repetir (uma tarefa por linha, mesmo cliente);
    - "Data:" aceita hoje, amanhã, dia da semana (sexta) ou 05/11;
      vazia ou sem a linha, a tarefa entra para hoje;
-   - o nome do cliente pode vir sem acento ou incompleto.
+   - o nome do cliente pode vir sem acento ou incompleto;
+   - "Cliente: todos" cria a tarefa para cada cliente ativo de tráfego.
    Responde no grupo confirmando ou pedindo correção.
    ============================================================ */
 var core = require('./_asaas-core');
@@ -108,6 +109,25 @@ async function mensagemRecebida(b){
     return { ok: false, motivo: 'data' };
   }
   var clientes = (await ref('clientes').once('value')).val() || {};
+  var autor = String(b.senderName || b.participantPhone || 'WhatsApp'), agora = new Date().toISOString();
+
+  /* "Cliente: todos" -> uma tarefa para cada cliente ativo de tráfego */
+  if(/^todos( os)?( clientes)?$/.test(norm(m.cliente))){
+    var todos = Object.keys(clientes).map(function(k){ var c = clientes[k]; return c && c.status !== 'encerrado' && c.trafego !== false ? Object.assign({ id: c.id || k }, c) : null; }).filter(Boolean);
+    if(!todos.length){
+      await meta.enviaWhats('⚠️ Nenhum cliente ativo de tráfego no painel.', dest);
+      return { ok: false, motivo: 'cliente' };
+    }
+    var lote = {};
+    todos.forEach(function(c){
+      m.tarefas.forEach(function(t){ lote[ref(Q.raiz + '/avulsas').push().key] = { clienteId: c.id, titulo: t, data: data, criadoEm: agora, criadoPor: 'WhatsApp · ' + autor }; });
+    });
+    await ref(Q.raiz + '/avulsas').update(lote);
+    await meta.enviaWhats('📝 *Tarefa' + (m.tarefas.length > 1 ? 's adicionadas' : ' adicionada') + ' para todos os ' + todos.length + ' clientes* (' + (data === hoje ? 'hoje, ' + tar.dataBR(data) : tar.quando(data)) + ')\n' +
+      m.tarefas.map(function(t){ return '• ' + t; }).join('\n'), dest);
+    return { ok: true, cliente: 'todos', clientes: todos.length, tarefas: m.tarefas.length, data: data };
+  }
+
   var achou = achaCliente(m.cliente, clientes);
   if(!achou.cliente){
     await meta.enviaWhats(achou.lista.length
@@ -116,7 +136,6 @@ async function mensagemRecebida(b){
     return { ok: false, motivo: 'cliente' };
   }
 
-  var autor = String(b.senderName || b.participantPhone || 'WhatsApp'), agora = new Date().toISOString();
   for(var i = 0; i < m.tarefas.length; i++){
     await ref(Q.raiz + '/avulsas').push({ clienteId: achou.cliente.id, titulo: m.tarefas[i], data: data, criadoEm: agora, criadoPor: 'WhatsApp · ' + autor });
   }

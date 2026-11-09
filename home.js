@@ -10,12 +10,15 @@
    tarDoDia, tarMarca, tarHoje, tarDiaLabel), de saldo.js (SAL, salLiga,
    salContas, salSit, salCard, salHa) e de checklist.js (ckResp,
    ckRotinaDoDia, ckRotinaMarca, ckUsuarios, ckNomeUsuario, mCkResponsaveis).
-   Não grava dados próprios.
+   Grava só as tarefas criadas aqui (botão "+ Tarefa"): avulsas de uma
+   pessoa em 2step_financeiro/tarefasPessoais, ou de tráfego / social media
+   nos quadros deles, sempre com o responsável (resp = chave do e-mail).
+   Cada pessoa cria para si; o administrador cria para qualquer um.
    ============================================================ */
 
 var HOME = { agenda: 'eu' };
 var HOME_ATRASO_DIAS = 7;   /* atrasadas: o que ficou para trás nos últimos 7 dias */
-var HOME_ORIGEM = { social: 'Social media', trafego: 'Tráfego', rel: 'Relatórios' };
+var HOME_ORIGEM = { social: 'Social media', trafego: 'Tráfego', rel: 'Relatórios', pessoal: 'Avulsa' };
 
 /* estilos só deste módulo */
 (function(){
@@ -44,8 +47,9 @@ function homeSaudacao(){
 /* ---------- tarefas de todos os quadros, com responsável ---------- */
 function homeDoDia(data){
   var r = ckResp(), out = [];
-  ['social', 'trafego'].forEach(function(q){
-    tarDoDia(data, q).forEach(function(t){ out.push(Object.assign({}, t, { q: q, data: data, resp: r[q] || '' })); });
+  ['social', 'trafego', 'pessoal'].forEach(function(q){
+    /* tarefa com responsável próprio vai para ele; senão, para o responsável da frente */
+    tarDoDia(data, q).forEach(function(t){ out.push(Object.assign({}, t, { q: q, data: data, resp: t.resp || (q === 'pessoal' ? '' : r[q] || '') })); });
   });
   ckRotinaDoDia(data).forEach(function(t){ out.push(Object.assign({}, t, { data: data })); });
   return out;
@@ -76,7 +80,7 @@ function homeAgendaTroca(v){ HOME.agenda = v; render(); }
 /* ---------- tela ---------- */
 function vHome(){
   var hoje = tarHoje();
-  tarLiga('social'); tarLiga('trafego'); salLiga();
+  tarLiga('social'); tarLiga('trafego'); tarLiga('pessoal'); salLiga();
 
   var ag = homeAgenda();
   var baixas = salContas().filter(function(c){ return c.ativo !== false && salSit(c) === 'baixo'; });
@@ -121,6 +125,7 @@ function homeTarefasHTML(ag, hoje){
       ts.map(function(t){
         var at = t.data < hoje && !t.feita;
         var hora = t.feita && t.feita.em ? new Date(t.feita.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+        var podeTirar = t.q === 'pessoal' && (euSouAdmin() || t.resp === chaveEmail(EMAIL));
         return '<div class="tar-t' + (t.feita ? ' ok' : '') + (at ? ' at' : '') + '">' +
           '<button class="tar-ck" aria-label="' + (t.feita ? 'Desmarcar' : 'Marcar como feita') + '" onclick="homeMarca(\'' + t.q + '\',\'' + t.data + '\',\'' + esc(t.chave) + '\',' + (t.feita ? 'false' : 'true') + ',' + !!(t.feita && t.feita.auto) + ')">✓</button>' +
           '<div style="min-width:0"><div class="tar-tt">' + esc(t.titulo) + '</div>' +
@@ -128,17 +133,71 @@ function homeTarefasHTML(ag, hoje){
               (at ? '<span class="hm-tag at">Atrasado · ' + esc(tarDiaLabel(t.data).replace(/-feira/, '')) + '</span>' : '') +
               (HOME.agenda === 'todos' ? '<span class="hm-tag">' + esc(t.resp ? ckNomeUsuario(t.resp) : 'sem responsável') + '</span>' : '') + '</div>' +
             (t.feita ? '<div class="sub">' + (t.feita.auto ? 'marcada pelo download' : 'feita às ' + hora + (t.feita.por ? ' · ' + esc(String(t.feita.por).split('@')[0]) : '')) + '</div>' : '') +
-          '</div></div>';
+          '</div>' + (podeTirar ? '<div class="tar-ac"><button class="btn btn-s btn-d" onclick="homeTira(\'' + t.data + '\',\'' + esc(t.chave) + '\')" aria-label="Excluir tarefa">×</button></div>' : '') + '</div>';
       }).join('');
   }).join('');
 
-  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Tarefas do dia</div><div class="flx" style="gap:8px">' + seletor +
+  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Tarefas do dia</div><div class="flx" style="gap:8px">' +
+      '<button class="btn btn-s btn-p" onclick="mHomeTarefa()">+ Tarefa</button>' + seletor +
       '<span class="pill ' + (!ag.hoje.length ? 'p-off' : (feitasHoje === ag.hoje.length ? 'p-on' : 'p-av')) + '">' + feitasHoje + ' de ' + ag.hoje.length + ' hoje</span></div></div>' +
     (todas.length ? '<div class="hm-l">' + lista + '</div>'
       : '<div class="empty"><b>Nenhuma tarefa ' + (HOME.agenda === 'todos' ? 'hoje' : 'nesta agenda hoje') + ' 🎉</b>As tarefas do dia e as atrasadas aparecem aqui.</div>') +
     '<div class="hm-f"><span class="sub" style="margin:0">' + (ag.atrasadas.length ? ag.atrasadas.length + ' atrasada(s) dos últimos ' + HOME_ATRASO_DIAS + ' dias' : 'Nada atrasado') + '</span>' +
       '<span class="flx" style="gap:6px"><button class="btn btn-s" onclick="go(\'trafego\')">Tráfego →</button><button class="btn btn-s" onclick="go(\'tarefas\')">Social media →</button><button class="btn btn-s" onclick="go(\'rel\')">Relatórios →</button></span></div>' +
     '</div>';
+}
+
+/* ---------- nova tarefa (avulsa, de tráfego ou de social media) ---------- */
+function mHomeTarefa(){
+  var adm = euSouAdmin(), eu = chaveEmail(EMAIL);
+  var alvo = adm && HOME.agenda !== 'eu' && HOME.agenda !== 'todos' ? HOME.agenda : eu;
+  var cs = listaClientes().filter(function(c){ return c.status !== 'encerrado'; })
+    .sort(function(a, b){ return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
+  var us = ckUsuarios();
+  if(!us.some(function(u){ return u.k === eu; })) us.unshift({ k: eu, nome: homeNome() || 'Eu' });
+  modal('Nova tarefa',
+    '<div class="fg"><label class="fl">Tipo</label><select class="fi" id="h_q" onchange="homeTipoTroca()">' +
+      '<option value="pessoal">Avulsa (fora de tráfego e social media)</option>' +
+      '<option value="trafego">Tráfego</option><option value="social">Social media</option></select>' +
+      '<div class="hint" id="h_qh">Fica só na agenda da pessoa, aqui na tela inicial.</div></div>' +
+    '<div class="fg"><label class="fl" id="h_clil">Cliente (opcional)</label><select class="fi" id="h_cli"><option value="">Sem cliente</option>' +
+      cs.map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(c.nome) + '</option>'; }).join('') + '</select></div>' +
+    '<div class="fg"><label class="fl">O que fazer</label><input class="fi" id="h_tit" maxlength="120" placeholder="Ligar para o cliente, revisar contrato..."></div>' +
+    '<div class="fr fr2"><div class="fg"><label class="fl">Dia</label><input type="date" class="fi" id="h_dia" value="' + tarHoje() + '"></div>' +
+      (adm ? '<div class="fg"><label class="fl">Para quem</label><select class="fi" id="h_resp">' +
+          us.map(function(u){ return '<option value="' + esc(u.k) + '"' + (u.k === alvo ? ' selected' : '') + '>' + esc(u.k === eu ? u.nome + ' (eu)' : u.nome) + '</option>'; }).join('') + '</select></div>'
+        : '<div class="fg"><label class="fl">Para quem</label><div class="fi" style="background:var(--slab2);color:var(--mute)">Para mim</div></div>') + '</div>',
+    '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="homeSalvaTarefa()">Adicionar</button>');
+  setTimeout(function(){ var e = $('h_tit'); if(e) e.focus(); }, 60);
+}
+function homeTipoTroca(){
+  var q = $('h_q').value, cli = $('h_cli');
+  $('h_clil').textContent = q === 'pessoal' ? 'Cliente (opcional)' : 'Cliente';
+  cli.options[0].textContent = q === 'pessoal' ? 'Sem cliente' : 'Escolha o cliente';
+  $('h_qh').textContent = q === 'pessoal' ? 'Fica só na agenda da pessoa, aqui na tela inicial.'
+    : 'Entra também em Tarefas de ' + (q === 'trafego' ? 'tráfego' : 'social media') + ' e nas mensagens do WhatsApp dessa frente.';
+}
+function homeSalvaTarefa(){
+  var q = $('h_q').value, cli = $('h_cli').value, tit = $('h_tit').value.trim(), dia = $('h_dia').value;
+  var eu = chaveEmail(EMAIL), resp = euSouAdmin() && $('h_resp') ? $('h_resp').value : eu;
+  if(!TAR_Q[q]) return;
+  if(q !== 'pessoal' && !cli) return toast('Escolha o cliente', 'err');
+  if(!tit) return toast('Escreva o que fazer', 'err');
+  if(!dia) return toast('Escolha o dia', 'err');
+  if(!resp) return toast('Escolha para quem é a tarefa', 'err');
+  tarLiga(q);
+  tarUpd('avulsas/' + uid(), { clienteId: cli || '', titulo: tit, data: dia, resp: resp, criadoEm: new Date().toISOString(), criadoPor: EMAIL || '' }, q)
+    .then(function(){}, function(e){ toast(e.message, 'err'); });
+  fecha();
+  toast('Tarefa adicionada' + (resp !== eu ? ' para ' + (ckNomeUsuario(resp) || 'a pessoa') : '') + (dia !== tarHoje() ? ' em ' + tarDiaLabel(dia) : ''), 'ok');
+  render();
+}
+function homeTira(data, chave){
+  var t = tarDoDia(data, 'pessoal').filter(function(x){ return x.chave === chave; })[0];
+  if(!t || !confirm('Excluir a tarefa "' + t.titulo + '"?')) return;
+  tarUpd('avulsas/' + t.id, null, 'pessoal');
+  if(t.feita) tarUpd('feitas/' + data + '/' + chave, null, 'pessoal');
+  toast('Tarefa excluída');
 }
 
 function homeAlertasHTML(baixas, erros, uv){

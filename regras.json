@@ -88,9 +88,27 @@
         "feitas": {
           ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
         },
+        "links": {
+          ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
+        },
         "config": {
           ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin'"
         }
+      },
+      "tarefasPessoais": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        "avulsas": {
+          "$id": {
+            ".write": "(!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) && (root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).child('papel').val() === 'admin' || (newData.exists() ? newData.child('resp').val() === auth.token.email.toLowerCase().replace('.', ',') : data.child('resp').val() === auth.token.email.toLowerCase().replace('.', ',')))"
+          }
+        },
+        "feitas": {
+          ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
+        }
+      },
+      "referencias": {
+        ".read": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()",
+        ".write": "!root.child('2step_financeiro/usuarios').exists() || root.child('2step_financeiro/usuarios').child(auth.token.email.toLowerCase().replace('.', ',')).exists()"
       }
     }
   }

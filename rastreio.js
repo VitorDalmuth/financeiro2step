@@ -368,7 +368,9 @@ function rasAbreConversa(id){
       return '<div class="ras-m ' + (m.de_mim ? 'eu' : '') + '">' + corpo + '<small>' + rasQ(m.em) + '</small></div>';
     }).join('') || '<div class="empty">Sem mensagens no servidor</div>') + '</div>';
     rasGaveta('Auditoria da Conversa', cab + chat, '<button class="btn" onclick="rasAbreLead(' + l.id + ')">Detalhes</button><button class="btn btn-p" onclick="rasMenuEtapa(' + l.id + ',\'' + esc(l.etapa) + '\')">Alterar Etapa da Jornada</button>', true);
-    var el = $('rasChat'); if(el) el.scrollTop = el.scrollHeight;
+    /* quem rola é o corpo do painel lateral: abre já na última mensagem */
+    var rolaFim = function(){ var b = $('rasDrB'); if(b) b.scrollTop = b.scrollHeight; };
+    rolaFim(); requestAnimationFrame(rolaFim); setTimeout(rolaFim, 150);
   }).catch(function(e){ rasGaveta('Auditoria da Conversa', '<div class="note">' + esc(e.message) + '</div>', '<button class="btn" onclick="fecha()">Fechar</button>', true); });
 }
 

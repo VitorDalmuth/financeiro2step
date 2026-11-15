@@ -117,7 +117,7 @@ function rasQuando(iso){
 }
 function rasData(iso){ if(!iso) return '—'; var d = new Date(iso); var p = function(n){ return (n < 10 ? '0' : '') + n; }; return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear(); }
 function rasPill(mapa, chave){ var m = mapa[chave] || { n: chave || '—', c: 'p-off' }; return '<span class="pill ' + m.c + '">' + esc(m.n) + '</span>'; }
-function rasNomeLead(l){ return esc(l.nome || (l.telefone ? rasFone(l.telefone) : 'Contato sem nome')); }
+function rasNomeLead(l){ var n = l.nome && !/^[\d\s()+\-]+$/.test(l.nome) ? l.nome : ''; return esc(n || (l.telefone ? rasFone(l.telefone) : 'Contato sem nome')); }
 function rasErro(c){ return c && c.erro ? '<div class="note">Não consegui falar com o motor: ' + esc(c.erro) + ' <button class="btn btn-s" onclick="rasRecarrega()">Tentar de novo</button></div>' : ''; }
 function rasCarregando(){ return '<div class="empty"><b>Carregando…</b>buscando no motor de rastreio</div>'; }
 
@@ -184,7 +184,7 @@ function vRasLeads(){
     (its.map(function(l){
       var od = l.origem_dados || {};
       var det = od.titulo ? '<div class="sub">' + esc(od.titulo) + '</div>' : (od.link_nome ? '<div class="sub">' + esc(od.link_nome) + '</div>' : '');
-      return '<tr class="ras-row" onclick="rasAbreLead(' + l.id + ')"><td><div class="nm">' + rasNomeLead(l) + '</div>' + (l.nome && l.telefone ? '<div class="sub mono">' + rasFone(l.telefone) + '</div>' : '') + '</td>' +
+      return '<tr class="ras-row" onclick="rasAbreLead(' + l.id + ')"><td><div class="nm">' + rasNomeLead(l) + '</div>' + (l.nome && !/^[\d\s()+\-]+$/.test(l.nome) && l.telefone ? '<div class="sub mono">' + rasFone(l.telefone) + '</div>' : '') + '</td>' +
         '<td>' + esc(l.cliente) + '<div class="sub">' + esc(l.conexao_nome || '') + '</div></td><td>' + rasPill(RAS_ORIGEM, l.origem) + det + '</td>' +
         '<td>' + rasPill(RAS_ETAPA, l.etapa) + (l.valor ? '<div class="sub mono">' + brl(l.valor) + '</div>' : '') + '</td>' +
         '<td class="tr mono">' + l.msgs_recebidas + ' <span style="color:var(--mute2)">/ ' + l.msgs_enviadas + '</span></td><td class="mono">' + rasQuando(l.primeiro_contato_em) + '</td><td class="mono">' + rasQuando(l.ultima_mensagem_em) + '</td></tr>';
@@ -238,7 +238,7 @@ function vRasConexoes(){
   return h + '<div class="pg">' + its.map(function(x){
     var det = x.detalhe || {};
     return '<div class="ras-cx"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><h3>' + esc(x.cliente) + '</h3><div class="sub">' + esc(x.nome_perfil || x.instancia) + (x.numero ? ' · <span class="mono">' + rasFone(x.numero) + '</span>' : '') + '</div></div>' + rasPill(RAS_ESTADO, x.estado) + '</div>' +
-      '<div class="sub"><span class="mono">' + x.leads + '</span> conversas · <span class="mono">' + x.total_processadas + '</span> mensagens lidas · atualizado ' + rasQuando(x.atualizado_em) + (det.motivo ? ' · motivo ' + esc(det.motivo) : '') + '</div>' +
+      '<div class="sub"><span class="mono">' + x.leads + '</span> conversas · <span class="mono">' + x.total_processadas + '</span> mensagens lidas · atualizado ' + rasQuando(x.atualizado_em) + (det.motivo && x.estado !== 'open' && String(det.motivo) !== '200' ? ' · motivo ' + esc(det.motivo) : '') + '</div>' +
       '<div class="ac">' + (x.estado !== 'open' ? '<button class="btn btn-s btn-p" onclick="rasQr(' + x.id + ')">Ler QR Code</button>' : '') +
       '<button class="btn btn-s" onclick="rasAcaoCx(' + x.id + ',\'sincronizar\')">Sincronizar</button>' +
       '<button class="btn btn-s" onclick="rasAcaoCx(' + x.id + ',\'reiniciar\')">Reiniciar</button>' +

@@ -200,7 +200,7 @@ function rasAbreLead(id){
     var od = l.origem_dados || {};
     var info = '<div class="ras-info">' +
       '<div style="font-family:var(--disp);font-size:17px;font-weight:600">' + rasNomeLead(l) + '</div>' +
-      (l.telefone ? '<div class="mono" style="color:var(--mute)">' + rasFone(l.telefone) + '</div>' : '<div class="sub">telefone ainda não identificado pelo WhatsApp</div>') +
+      (l.telefone ? '<div class="mono" style="color:var(--mute)">' + rasFone(l.telefone) + (l.telefone_fonte === 'nome' ? ' <span class="pill p-av" title="Telefone deduzido pelo nome de exibição; o WhatsApp ainda não confirmou">provável</span>' : '') + '</div>' : '<div class="sub">telefone ainda não identificado pelo WhatsApp</div>') +
       '<div style="margin-top:8px">' + rasPill(RAS_ORIGEM, l.origem) + ' ' + rasPill(RAS_ETAPA, l.etapa) + (l.valor ? ' <span class="mono">' + brl(l.valor) + '</span>' : '') + '</div>' +
       '<b>Cliente</b>' + esc(l.cliente) + ' · ' + esc(l.conexao_nome || '') +
       (l.origem === 'meta_ctwa' ? '<b>Anúncio</b>' + esc(od.titulo || '—') + (od.descricao ? '<div class="sub">' + esc(od.descricao) + '</div>' : '') + (od.anuncio_id ? '<div class="sub mono">id ' + esc(od.anuncio_id) + (od.app ? ' · ' + esc(od.app) : '') + '</div>' : '') + (od.url ? '<div class="sub"><a class="ras-url" href="' + esc(od.url) + '" target="_blank" rel="noopener">' + esc(od.url) + '</a></div>' : '') : '') +

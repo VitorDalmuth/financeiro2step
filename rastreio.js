@@ -332,6 +332,7 @@ function rasSalvaEtapa(id){
     .then(function(){ fecha(); toast('Etapa alterada', 'ok'); rasLimpa('d:'); render(); }).catch(function(e){ toast(e.message, 'err'); });
 }
 function rasGaveta(titulo, corpo, rodape, largo){
+  if(titulo !== 'Auditoria da Conversa') RAS.conversaAberta = 0;
   $('modal').innerHTML = '<div class="ras-ov" onclick="if(event.target===this)fecha()"><div class="ras-dr ' + (largo ? 'lg' : '') + '"><div class="ras-drh"><div class="t" style="flex:1">' + titulo + '</div><button class="md-x" onclick="fecha()">×</button></div><div class="ras-drb" id="rasDrB">' + corpo + '</div><div class="ras-drf">' + (rodape || '') + '</div></div></div>';
 }
 function rasAbreLead(id){
@@ -357,20 +358,48 @@ function rasAbreLead(id){
     rasGaveta('Detalhes do lead', corpo, '<button class="btn" onclick="fecha()">Fechar</button>');
   }).catch(function(e){ rasGaveta('Detalhes do lead', '<div class="note">' + esc(e.message) + '</div>', '<button class="btn" onclick="fecha()">Fechar</button>'); });
 }
+function rasMidiaHtml(m){
+  var md = m.midia; if(!md) return '';
+  if(md.estado === 'ok' && md.url){
+    if(md.tipo === 'imagem' || md.tipo === 'figurinha') return '<a href="' + esc(md.url) + '" target="_blank" rel="noopener"><img class="ras-img' + (md.tipo === 'figurinha' ? ' fig' : '') + '" src="' + esc(md.url) + '" alt="imagem" loading="lazy"></a>';
+    if(md.tipo === 'audio') return '<div class="ras-aud">' + (md.ptt ? '🎤' : '🎧') + ' <audio controls preload="none" src="' + esc(md.url) + '"></audio>' + (md.segundos ? '<small>' + Math.floor(md.segundos / 60) + ':' + rasP2(md.segundos % 60) + '</small>' : '') + '</div>';
+    if(md.tipo === 'video') return '<video class="ras-vid" controls preload="metadata" src="' + esc(md.url) + '"></video>';
+    return '<a class="ras-doc" href="' + esc(md.url) + '" target="_blank" rel="noopener">📄 ' + esc(md.nome || 'Documento') + (md.tamanho ? ' <small>' + (md.tamanho > 1048576 ? (md.tamanho / 1048576).toFixed(1) + ' MB' : Math.round(md.tamanho / 1024) + ' KB') + '</small>' : '') + '</a>';
+  }
+  var rotulo = { imagem: 'Imagem', audio: 'Mensagem de áudio', video: 'Vídeo', documento: 'Documento', figurinha: 'Figurinha' }[md.tipo] || 'Mídia';
+  if(md.estado === 'pendente') return '<span class="md">⏳ ' + rotulo + ' · carregando…</span>';
+  if(md.estado === 'expirada') return '<span class="md">' + rotulo + ' · removida após o prazo de retenção</span>';
+  return '<span class="md">' + rotulo + ' · não disponível (o WhatsApp já não a entrega)</span>';
+}
+function rasChatHtml(msgs){
+  return msgs.map(function(m){
+    var corpo = m.midia ? rasMidiaHtml(m) + (m.texto ? '<div style="margin-top:4px">' + esc(m.texto) + '</div>' : '') : (m.texto ? esc(m.texto) : '<span class="md">[' + esc(m.tipo) + ']</span>');
+    return '<div class="ras-m ' + (m.de_mim ? 'eu' : '') + '">' + corpo + '<small>' + rasQ(m.em) + '</small></div>';
+  }).join('') || '<div class="empty">Sem mensagens no servidor</div>';
+}
 function rasAbreConversa(id){
   rasGaveta('Auditoria da Conversa', rasCarregando(), '<button class="btn" onclick="fecha()">Fechar</button>', true);
+  RAS.conversaAberta = id;
   Promise.all([rasApi('GET', '/api/leads/' + id), rasApi('GET', '/api/leads/' + id + '/mensagens')]).then(function(rs){
     var l = rs[0].lead, msgs = rs[1].itens || [];
     var cab = '<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><div class="lk-i" style="background:var(--volt-dim);color:#a78bfa;width:38px;height:38px">' + esc((rasNome(l) || 'C').slice(0, 2).toUpperCase()) + '</div><div><div class="mono" style="font-weight:600">' + rasFone(l.telefone) + '</div><div class="sub">' + esc(rasNome(l) || '—') + ' · ' + esc(l.etapa_nome || l.etapa) + '</div></div></div>';
-    var TIPOS = { audioMessage: '🎧 Mensagem de Áudio', imageMessage: '🖼 Imagem', videoMessage: '🎬 Vídeo', documentMessage: '📄 Documento', stickerMessage: '✨ Figurinha' };
-    var chat = '<div class="ras-chat" id="rasChat">' + (msgs.map(function(m){
-      var corpo = m.texto ? esc(m.texto) : '<span class="md">' + (TIPOS[m.tipo] || '[' + esc(m.tipo) + ']') + '</span>';
-      return '<div class="ras-m ' + (m.de_mim ? 'eu' : '') + '">' + corpo + '<small>' + rasQ(m.em) + '</small></div>';
-    }).join('') || '<div class="empty">Sem mensagens no servidor</div>') + '</div>';
-    rasGaveta('Auditoria da Conversa', cab + chat, '<button class="btn" onclick="rasAbreLead(' + l.id + ')">Detalhes</button><button class="btn btn-p" onclick="rasMenuEtapa(' + l.id + ',\'' + esc(l.etapa) + '\')">Alterar Etapa da Jornada</button>', true);
+    rasGaveta('Auditoria da Conversa', cab + '<div class="ras-chat" id="rasChat">' + rasChatHtml(msgs) + '</div>', '<button class="btn" onclick="rasAbreLead(' + l.id + ')">Detalhes</button><button class="btn btn-p" onclick="rasMenuEtapa(' + l.id + ',\'' + esc(l.etapa) + '\')">Alterar Etapa da Jornada</button>', true);
     /* quem rola é o corpo do painel lateral: abre já na última mensagem */
     var rolaFim = function(){ var b = $('rasDrB'); if(b) b.scrollTop = b.scrollHeight; };
     rolaFim(); requestAnimationFrame(rolaFim); setTimeout(rolaFim, 150);
+    /* mídias do histórico ainda baixando: atualiza o chat sozinho algumas vezes */
+    var tentativas = 0;
+    var atualiza = function(){
+      if(RAS.conversaAberta !== id || !$('rasChat') || tentativas++ >= 6) return;
+      rasApi('GET', '/api/leads/' + id + '/mensagens').then(function(j){
+        var el = $('rasChat'); if(!el || RAS.conversaAberta !== id) return;
+        var b = $('rasDrB'), noFim = b && (b.scrollHeight - b.scrollTop - b.clientHeight < 80);
+        el.innerHTML = rasChatHtml(j.itens || []);
+        if(noFim) rolaFim();
+        if(j.midias_pendentes) setTimeout(atualiza, 3000);
+      }).catch(function(){});
+    };
+    if(rs[1].midias_pendentes) setTimeout(atualiza, 2500);
   }).catch(function(e){ rasGaveta('Auditoria da Conversa', '<div class="note">' + esc(e.message) + '</div>', '<button class="btn" onclick="fecha()">Fechar</button>', true); });
 }
 

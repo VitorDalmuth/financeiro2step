@@ -390,13 +390,13 @@ function rasAbreConversa(id){
     /* mídias do histórico ainda baixando: atualiza o chat sozinho algumas vezes */
     var tentativas = 0;
     var atualiza = function(){
-      if(RAS.conversaAberta !== id || !$('rasChat') || tentativas++ >= 6) return;
+      if(RAS.conversaAberta !== id || !$('rasChat') || tentativas++ >= 25) return;
       rasApi('GET', '/api/leads/' + id + '/mensagens').then(function(j){
         var el = $('rasChat'); if(!el || RAS.conversaAberta !== id) return;
         var b = $('rasDrB'), noFim = b && (b.scrollHeight - b.scrollTop - b.clientHeight < 80);
         el.innerHTML = rasChatHtml(j.itens || []);
         if(noFim) rolaFim();
-        if(j.midias_pendentes) setTimeout(atualiza, 3000);
+        if(j.midias_pendentes) setTimeout(atualiza, 4000);
       }).catch(function(){});
     };
     if(rs[1].midias_pendentes) setTimeout(atualiza, 2500);

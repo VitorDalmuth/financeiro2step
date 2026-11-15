@@ -241,7 +241,7 @@ function vRasConexoes(){
       '<div class="sub"><span class="mono">' + x.leads + '</span> conversas · <span class="mono">' + x.total_processadas + '</span> mensagens lidas · atualizado ' + rasQuando(x.atualizado_em) + (det.motivo && x.estado !== 'open' && String(det.motivo) !== '200' ? ' · motivo ' + esc(det.motivo) : '') + '</div>' +
       '<div class="ac">' + (x.estado !== 'open' ? '<button class="btn btn-s btn-p" onclick="rasQr(' + x.id + ')">Ler QR Code</button>' : '') +
       '<button class="btn btn-s" onclick="rasAcaoCx(' + x.id + ',\'sincronizar\')">Sincronizar</button>' +
-      '<button class="btn btn-s" onclick="rasAcaoCx(' + x.id + ',\'reiniciar\')">Reiniciar</button>' +
+      (x.estado !== 'open' ? '<button class="btn btn-s" onclick="rasAcaoCx(' + x.id + ',\'reiniciar\')">Reiniciar</button>' : '') +
       (euSouAdmin() ? '<button class="btn btn-s btn-d" onclick="rasAcaoCx(' + x.id + ',\'sair\')">Desconectar</button><button class="btn btn-s btn-d" onclick="rasRemoveCx(' + x.id + ',\'' + esc(x.cliente) + '\')">Remover</button>' : '') + '</div></div>';
   }).join('') + '</div>';
 }

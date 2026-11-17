@@ -557,7 +557,7 @@ function vRasInfo(){
   h += '<div class="card"><div class="rw-hd"><div class="rw-t">Informações Básicas</div>' + (euSouAdmin() ? '<button class="btn btn-s" onclick="rasEditaCliente(' + c.id + ')">Editar</button>' : '') + '</div>' +
     '<div class="ras-kv"><b>Nome</b><span>' + esc(c.nome) + '</span><b>Cliente no 2STEP</b><span>' + (v ? esc(v.nome) : '<span class="sub">sem vínculo</span>') + '</span><b>Código do cliente</b><span class="mono">' + c.id + ' · ' + esc(c.slug) + '</span></div></div>';
   h += '<div class="card"><div class="rw-hd"><div class="rw-t">WhatsApp</div><button class="btn btn-s btn-p" onclick="rasNovaConexao()">Conectar número</button></div>' +
-    (cx === null ? rasCarregando() : (cx.length ? cx.map(function(x){ return '<div class="lk" style="padding:10px 0"><div class="lk-b"><div class="lk-n">' + esc(x.nome_perfil || x.instancia) + ' ' + rasPillEstado(x.estado) + '</div><div class="lk-u">' + rasFone(x.numero) + ' · ' + x.leads + ' conversas · ' + x.total_processadas + ' mensagens</div></div><div class="lk-a">' + (x.estado !== 'open' ? '<button class="btn btn-s btn-p" onclick="rasQr(' + x.id + ')">Ler QR</button>' : '') + '<button class="btn btn-s" onclick="rasAcaoCx(' + x.id + ',\'sincronizar\')">Sincronizar</button>' + (euSouAdmin() ? '<button class="btn btn-s btn-d" onclick="rasAcaoCx(' + x.id + ',\'sair\')">Desconectar</button>' : '') + '</div></div>'; }).join('') : '<div class="empty">Nenhum número conectado</div>')) + '</div>';
+    (cx === null ? rasCarregando() : (cx.length ? cx.map(function(x){ return '<div class="lk" style="padding:10px 0"><div class="lk-b"><div class="lk-n">' + esc(x.nome_perfil || x.instancia) + ' ' + rasPillEstado(x.estado) + '</div><div class="lk-u">' + rasFone(x.numero) + ' · ' + x.leads + ' conversas · ' + x.total_processadas + ' mensagens' + (x.link ? ' · <span style="color:var(--cyan)">link de conexão ativo até ' + rasDataCurta(x.link.expira) + '</span>' : '') + '</div></div><div class="lk-a">' + (x.estado !== 'open' ? '<button class="btn btn-s btn-p" onclick="rasLinkCx(' + x.id + ')">Link para o cliente</button><button class="btn btn-s" onclick="rasQr(' + x.id + ')">Ler QR aqui</button>' : '') + '<button class="btn btn-s" onclick="rasAcaoCx(' + x.id + ',\'sincronizar\')">Sincronizar</button>' + (euSouAdmin() ? '<button class="btn btn-s btn-d" onclick="rasAcaoCx(' + x.id + ',\'sair\')">Desconectar</button>' : '') + '</div></div>'; }).join('') : '<div class="empty">Nenhum número conectado</div>')) + '</div>';
   h += '<div class="card"><div class="rw-hd"><div class="rw-t">Meta Ads</div>' + (euSouAdmin() ? '<button class="btn btn-s" onclick="rasEditaCapi()">Editar</button>' : '') + '</div>' +
     '<div class="ras-kv"><b>Pixel / Dataset</b><span class="mono">' + (capi.dataset_id ? esc(capi.dataset_id) : '<span class="sub">não configurado</span>') + '</span><b>Token da API</b><span class="mono">' + (capi.token ? esc(capi.token) : '<span class="sub">—</span>') + '</span><b>Código de teste</b><span class="mono">' + (capi.test_code ? esc(capi.test_code) : '<span class="sub">—</span>') + '</span><b>Disparar para não rastreadas</b><span>' + (capi.nao_rastreados ? 'Sim' : 'Não') + '</span></div>' +
     '<div class="hint mt12">Os eventos de cada etapa da jornada são enviados pela Conversions API com o identificador do clique do anúncio. Use o código de teste da Meta para validar antes de ligar.</div></div>';
@@ -600,12 +600,33 @@ function rasSalvaWebhook(id){
 }
 function rasNovaConexao(){
   if(!rasClienteAtual()) return;
-  modal('Conectar número de WhatsApp', '<p class="sub">Vai abrir um QR Code. No celular do cliente: WhatsApp › Mais opções (⋮) › Dispositivos conectados › Conectar dispositivo. O histórico recente entra sozinho depois da leitura.</p>',
-    '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="rasCriaConexao()">Gerar QR Code</button>');
+  modal('Conectar número de WhatsApp', '<p class="sub">O número do cliente precisa ler um QR Code, como no WhatsApp Web. Você pode <b>mandar um link</b> para o cliente ler no celular dele, com o passo a passo, ou <b>ler o QR aqui</b> se estiver com o aparelho na mão. O histórico recente entra sozinho depois da leitura.</p>',
+    '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn" onclick="rasCriaConexao(\'qr\')">Ler QR aqui</button><button class="btn btn-p" onclick="rasCriaConexao(\'link\')">Gerar link para o cliente</button>');
 }
-function rasCriaConexao(){
+function rasCriaConexao(modo){
   modal('Conectar número de WhatsApp', rasCarregando(), '');
-  rasApi('POST', '/api/conexoes', { cliente_id: Number(RAS.cliente) }).then(function(j){ rasLimpa('d:cx'); rasLimpa('clientes'); rasQr(j.conexao.id); }).catch(function(e){ toast(e.message, 'err'); fecha(); });
+  rasApi('POST', '/api/conexoes', { cliente_id: Number(RAS.cliente) }).then(function(j){ rasLimpa('d:cx'); rasLimpa('clientes'); if(modo === 'link') rasLinkCx(j.conexao.id); else rasQr(j.conexao.id); }).catch(function(e){ toast(e.message, 'err'); fecha(); });
+}
+/* link público de conexão: gera (ou reaproveita), mostra, copia, renova e desativa */
+function rasDataCurta(iso){ var d = new Date(iso); if(isNaN(d)) return '—'; return rasP2(d.getDate()) + '/' + rasP2(d.getMonth() + 1) + ' às ' + rasP2(d.getHours()) + ':' + rasP2(d.getMinutes()); }
+function rasLinkCx(id, novo){
+  modal('Link de conexão para o cliente', rasCarregando(), '');
+  rasApi('POST', '/api/conexoes/' + id + '/link', novo ? { novo: true } : {}).then(function(j){ rasLimpa('d:cx'); rasMostraLink(id, j.link); if(novo) toast('Novo link gerado; o anterior deixou de valer', 'ok'); }).catch(function(e){ toast(e.message, 'err'); fecha(); });
+}
+function rasMostraLink(id, link){
+  var c = rasClienteAtual() || {}, ate = rasDataCurta(link.expira);
+  var msg = 'Olá! Para ligar o WhatsApp da ' + (c.nome || 'empresa') + ' ao acompanhamento de conversas da 2STEP, abra este link em um computador ou em outro aparelho e siga o passo a passo:\n\n' + link.url + '\n\nÉ só ler o QR Code com o celular do número da empresa (WhatsApp › Dispositivos conectados › Conectar dispositivo). Leva menos de um minuto e nada muda no uso do WhatsApp. O link vale até ' + ate + '.';
+  modal('Link de conexão para o cliente',
+    '<p class="sub">Mande este link ao cliente. A página mostra o QR Code, o passo a passo e avisa quando conectar. O código renova sozinho; o link vale até <b>' + ate + '</b> e pode ser desativado a qualquer momento.</p>' +
+    '<div class="fg"><label class="fl">Link</label><div class="ras-url" id="ras_cxl_url">' + esc(link.url) + '</div></div>' +
+    '<div class="fg"><label class="fl">Mensagem pronta para enviar</label><textarea class="fi" id="ras_cxl_msg" style="min-height:150px">' + esc(msg) + '</textarea><div class="hint">Pode editar antes de copiar.</div></div>',
+    '<button class="btn" onclick="rasFechaQr()">Fechar</button><button class="btn btn-d" onclick="rasRevogaLink(' + id + ')">Desativar link</button><button class="btn" onclick="rasLinkCx(' + id + ',true)">Novo link</button>' +
+    '<button class="btn" onclick="navigator.clipboard.writeText(document.getElementById(\'ras_cxl_url\').textContent).then(function(){toast(\'Link copiado\',\'ok\')})">Copiar link</button>' +
+    '<button class="btn btn-p" onclick="navigator.clipboard.writeText(document.getElementById(\'ras_cxl_msg\').value).then(function(){toast(\'Mensagem copiada\',\'ok\')})">Copiar mensagem</button>');
+}
+function rasRevogaLink(id){
+  if(!confirm('Desativar o link? Quem o tiver não conseguirá mais abrir a página de conexão.')) return;
+  rasApi('DELETE', '/api/conexoes/' + id + '/link').then(function(){ toast('Link desativado', 'ok'); rasFechaQr(); }).catch(function(e){ toast(e.message, 'err'); });
 }
 function rasFechaQr(){ clearTimeout(RAS.qrTimer); RAS.qrTimer = null; RAS.qrId = 0; fecha(); rasLimpa('d:cx'); render(); }
 function rasQr(id){

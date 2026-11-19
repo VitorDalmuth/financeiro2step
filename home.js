@@ -30,6 +30,22 @@ var HOME_ORIGEM = { social: 'Social media', trafego: 'Tráfego', rel: 'Relatóri
   '.hm-tag.at{background:var(--coral-dim);color:var(--coral)}' +
   '.hm-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}' +
   '.tar-t.at{background:linear-gradient(90deg,var(--coral-dim),transparent 70%)}' +
+  '.hm-sem{display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 12px 2px}' +
+  '.hm-sem-t{font-size:12.5px;color:var(--mute);font-weight:600;min-width:130px;text-align:center}' +
+  '.hm-dias{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:6px 12px 10px;border-bottom:1px solid var(--line)}' +
+  '.hm-d{display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 2px 6px;border-radius:10px;background:transparent;color:var(--mute);font-size:11px;line-height:1.2}' +
+  '.hm-d b{font-size:16px;color:var(--ink);font-family:var(--body)}.hm-d:hover{background:var(--slab2)}' +
+  '.hm-d.on{background:var(--volt);color:#fff}.hm-d.on b,.hm-d.on i{color:#fff}.hm-d.hj:not(.on) b{color:var(--volt)}' +
+  '.hm-d i{font-style:normal;font-size:10px;font-weight:700;min-height:14px;padding:0 5px;border-radius:999px;background:var(--coral-dim);color:var(--coral)}' +
+  '.hm-d i.ok{background:transparent;color:var(--mint)}.hm-d i.vz{background:transparent}.hm-d.on i{background:rgba(255,255,255,.2)}' +
+  '.hm-w{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;padding:10px 12px;max-height:620px;overflow:auto}.hm-g1{grid-template-columns:1fr}' +
+  '.hm-wd{background:var(--slab2);border:1px solid var(--line);border-radius:10px;padding:8px;min-width:0}.hm-wd.hj{border-color:var(--volt)}' +
+  '.hm-wd-h{display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:4px}' +
+  '.hm-wd-b{font-size:11.5px;font-weight:700;color:var(--ink);text-transform:capitalize;padding:0;background:none}.hm-wd-b:hover{color:var(--volt)}' +
+  '.hm-wt{display:flex;gap:6px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--line)}.hm-wt .tar-ck{flex:none;transform:scale(.85);transform-origin:left top}' +
+  '.hm-wt-t{font-size:12px;line-height:1.3;word-break:break-word}.hm-wt.ok .hm-wt-t{text-decoration:line-through;color:var(--mute)}' +
+  '.hm-wt-c{font-size:10.5px;color:var(--mute);margin-top:1px}.hm-wt-v{font-size:11.5px;color:var(--mute2);padding:6px 0}' +
+  '@media(max-width:600px){.hm-d span{font-size:9.5px}}' +
   '@media(max-width:1000px){.hm-g{grid-template-columns:1fr}}';
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
 })();
@@ -99,12 +115,56 @@ function vHome(){
   (semResp ? '<div class="note">Defina quem cuida de cada frente (tráfego, social media e rotina de relatórios) para cada pessoa ver só as suas tarefas. ' +
     '<button class="btn btn-s btn-p" style="margin-left:6px" onclick="mCkResponsaveis()">Definir responsáveis</button></div>' : '') +
 
-  '<div class="hm-g">' + homeTarefasHTML(ag, hoje) + homeAlertasHTML(baixas, erros, uv) + '</div>';
+  '<div class="hm-g' + ((HOME.modo || 'dia') === 'semana' ? ' hm-g1' : '') + '">' + homeTarefasHTML(ag, hoje) + homeAlertasHTML(baixas, erros, uv) + '</div>';
+}
+
+/* ---------- dia escolhido e semana (padrão: hoje, como sempre foi) ---------- */
+var HOME_MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+var HOME_SEM = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
+function homeDia(){ return HOME.dia || tarHoje(); }
+function homeSegunda(d){ return addDias(d, -(tarDow(d) - 1)); }
+function homeDiaCurto(d){ return String(+d.slice(8, 10)) + ' ' + HOME_MESES[+d.slice(5, 7) - 1]; }
+function homeVaiDia(d){ HOME.dia = d; HOME.modo = 'dia'; render(); }
+function homeModo(m){ HOME.modo = m; render(); }
+function homeSemana(k){ HOME.dia = addDias(homeDia(), 7 * k); render(); }
+function homeDoDiaVisivel(data){ return homeDoDia(data).filter(homeVisivel); }
+
+/* faixa com os sete dias da semana do dia escolhido */
+function homeFaixaHTML(hoje){
+  var dia = homeDia(), seg = homeSegunda(dia), cel = '';
+  for(var i = 0; i < 7; i++){
+    var d = addDias(seg, i), ts = homeDoDiaVisivel(d), pend = ts.filter(function(t){ return !t.feita; }).length;
+    cel += '<button class="hm-d' + (d === dia ? ' on' : '') + (d === hoje ? ' hj' : '') + '" onclick="homeVaiDia(\'' + d + '\')"><span>' + HOME_SEM[i] + '</span><b>' + (+d.slice(8, 10)) + '</b>' +
+      (ts.length ? '<i class="' + (pend ? '' : 'ok') + '">' + (pend || '✓') + '</i>' : '<i class="vz"></i>') + '</button>';
+  }
+  return '<div class="hm-sem"><button class="btn btn-s" onclick="homeSemana(-1)" aria-label="Semana anterior">‹</button>' +
+    '<span class="hm-sem-t">' + homeDiaCurto(seg) + ' — ' + homeDiaCurto(addDias(seg, 6)) + '</span>' +
+    (dia !== hoje ? '<button class="btn btn-s" onclick="homeVaiDia(\'' + hoje + '\')">Hoje</button>' : '') +
+    '<button class="btn btn-s" onclick="homeSemana(1)" aria-label="Próxima semana">›</button></div><div class="hm-dias">' + cel + '</div>';
+}
+
+/* modo Semana: os sete dias lado a lado */
+function homeSemanaHTML(hoje){
+  var seg = homeSegunda(homeDia()), cols = '';
+  for(var i = 0; i < 7; i++){
+    var d = addDias(seg, i), ts = homeDoDiaVisivel(d), pend = ts.filter(function(t){ return !t.feita; }).length;
+    cols += '<div class="hm-wd' + (d === hoje ? ' hj' : '') + '"><div class="hm-wd-h"><button class="hm-wd-b" onclick="homeVaiDia(\'' + d + '\')">' + HOME_SEM[i].slice(0, 3) + ' ' + (+d.slice(8, 10)) + '</button>' +
+        (ts.length ? '<span class="sub" style="margin:0;font-size:11px">' + (pend ? pend + ' pend.' : '✓ feito') + '</span>' : '') + '</div>' +
+      (ts.length ? ts.map(function(t){
+        return '<div class="hm-wt' + (t.feita ? ' ok' : '') + '">' +
+          '<button class="tar-ck" aria-label="' + (t.feita ? 'Desmarcar' : 'Marcar como feita') + '" onclick="homeMarca(\'' + t.q + '\',\'' + t.data + '\',\'' + esc(t.chave) + '\',' + (t.feita ? 'false' : 'true') + ',' + !!(t.feita && t.feita.auto) + ')">✓</button>' +
+          '<div style="min-width:0"><div class="hm-wt-t">' + esc(t.titulo) + '</div><div class="hm-wt-c">' + esc(t.cliente) + ' · ' + HOME_ORIGEM[t.q] + (HOME.agenda === 'todos' ? ' · ' + esc(t.resp ? ckNomeUsuario(t.resp) : 'sem responsável') : '') + '</div></div></div>';
+      }).join('') : '<div class="hm-wt-v">sem tarefas</div>') + '</div>';
+  }
+  return '<div class="hm-w">' + cols + '</div>';
 }
 
 function homeTarefasHTML(ag, hoje){
-  var todas = ag.atrasadas.concat(ag.hoje);
-  var feitasHoje = ag.hoje.filter(function(t){ return t.feita; }).length;
+  var dia = homeDia(), modo = HOME.modo || 'dia', hojeSel = dia === hoje;
+  /* outro dia escolhido: só as tarefas daquele dia (as atrasadas são sempre em relação a hoje) */
+  var agDia = hojeSel ? ag : { hoje: homeDoDiaVisivel(dia), atrasadas: [] };
+  var todas = agDia.atrasadas.concat(agDia.hoje);
+  var feitasHoje = agDia.hoje.filter(function(t){ return t.feita; }).length;
   var grupos = {}, ordem = [];
   todas.forEach(function(t){ var k = t.clienteId || '_'; if(!grupos[k]){ grupos[k] = []; ordem.push(k); } grupos[k].push(t); });
   /* clientes com atrasadas primeiro */
@@ -118,6 +178,7 @@ function homeTarefasHTML(ag, hoje){
     '<option value="eu"' + (HOME.agenda === 'eu' ? ' selected' : '') + '>Minha agenda</option>' +
     us.filter(function(u){ return u.k !== chaveEmail(EMAIL); }).map(function(u){ return '<option value="' + esc(u.k) + '"' + (HOME.agenda === u.k ? ' selected' : '') + '>Agenda de ' + esc(u.nome) + '</option>'; }).join('') +
     '<option value="todos"' + (HOME.agenda === 'todos' ? ' selected' : '') + '>Toda a equipe</option></select>';
+  var modos = '<div class="seg"><button class="' + (modo === 'dia' ? 'on' : '') + '" onclick="homeModo(\'dia\')">Dia</button><button class="' + (modo === 'semana' ? 'on' : '') + '" onclick="homeModo(\'semana\')">Semana</button></div>';
 
   var lista = ordem.map(function(k){
     var ts = grupos[k], pend = ts.filter(function(t){ return !t.feita; }).length;
@@ -138,11 +199,16 @@ function homeTarefasHTML(ag, hoje){
       }).join('');
   }).join('');
 
-  return '<div class="tw"><div class="tw-hd"><div class="tw-t">Tarefas do dia</div><div class="flx" style="gap:8px">' +
+  var corpo;
+  if(modo === 'semana') corpo = homeSemanaHTML(hoje);
+  else if(todas.length) corpo = '<div class="hm-l">' + lista + '</div>';
+  else corpo = '<div class="empty"><b>Nenhuma tarefa ' + (HOME.agenda === 'todos' ? '' : 'nesta agenda ') + (hojeSel ? 'hoje' : 'nesse dia') + ' 🎉</b>' +
+    (hojeSel ? 'As tarefas do dia e as atrasadas aparecem aqui.' : 'Use "+ Tarefa" para adicionar algo em ' + esc(tarDiaLabel(dia)) + '.') + '</div>';
+
+  return '<div class="tw"><div class="tw-hd"><div class="tw-t">' + (hojeSel ? 'Tarefas do dia' : 'Tarefas de ' + esc(tarDiaLabel(dia))) + '</div><div class="flx" style="gap:8px">' + modos +
       '<button class="btn btn-s btn-p" onclick="mHomeTarefa()">+ Tarefa</button>' + seletor +
-      '<span class="pill ' + (!ag.hoje.length ? 'p-off' : (feitasHoje === ag.hoje.length ? 'p-on' : 'p-av')) + '">' + feitasHoje + ' de ' + ag.hoje.length + ' hoje</span></div></div>' +
-    (todas.length ? '<div class="hm-l">' + lista + '</div>'
-      : '<div class="empty"><b>Nenhuma tarefa ' + (HOME.agenda === 'todos' ? 'hoje' : 'nesta agenda hoje') + ' 🎉</b>As tarefas do dia e as atrasadas aparecem aqui.</div>') +
+      (modo === 'dia' ? '<span class="pill ' + (!agDia.hoje.length ? 'p-off' : (feitasHoje === agDia.hoje.length ? 'p-on' : 'p-av')) + '">' + feitasHoje + ' de ' + agDia.hoje.length + (hojeSel ? ' hoje' : '') + '</span>' : '') + '</div></div>' +
+    homeFaixaHTML(hoje) + corpo +
     '<div class="hm-f"><span class="sub" style="margin:0">' + (ag.atrasadas.length ? ag.atrasadas.length + ' atrasada(s) dos últimos ' + HOME_ATRASO_DIAS + ' dias' : 'Nada atrasado') + '</span>' +
       '<span class="flx" style="gap:6px"><button class="btn btn-s" onclick="go(\'trafego\')">Tráfego →</button><button class="btn btn-s" onclick="go(\'tarefas\')">Social media →</button><button class="btn btn-s" onclick="go(\'rel\')">Relatórios →</button></span></div>' +
     '</div>';
@@ -164,7 +230,7 @@ function mHomeTarefa(){
     '<div class="fg"><label class="fl" id="h_clil">Cliente (opcional)</label><select class="fi" id="h_cli"><option value="">Sem cliente</option>' +
       cs.map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(c.nome) + '</option>'; }).join('') + '</select></div>' +
     '<div class="fg"><label class="fl">O que fazer</label><input class="fi" id="h_tit" maxlength="120" placeholder="Ligar para o cliente, revisar contrato..."></div>' +
-    '<div class="fr fr2"><div class="fg"><label class="fl">Dia</label><input type="date" class="fi" id="h_dia" value="' + tarHoje() + '"></div>' +
+    '<div class="fr fr2"><div class="fg"><label class="fl">Dia</label><input type="date" class="fi" id="h_dia" value="' + homeDia() + '"></div>' +
       (adm ? '<div class="fg"><label class="fl">Para quem</label><select class="fi" id="h_resp">' +
           us.map(function(u){ return '<option value="' + esc(u.k) + '"' + (u.k === alvo ? ' selected' : '') + '>' + esc(u.k === eu ? u.nome + ' (eu)' : u.nome) + '</option>'; }).join('') + '</select></div>'
         : '<div class="fg"><label class="fl">Para quem</label><div class="fi" style="background:var(--slab2);color:var(--mute)">Para mim</div></div>') + '</div>',

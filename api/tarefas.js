@@ -6,11 +6,16 @@
    /api/tarefas?acao=enviar&data=AAAA-MM-DD (POST)
        manda agora no WhatsApp o que falta do dia
    /api/tarefas?acao=teste (POST, só admin)  mensagem de teste
+   /api/tarefas?acao=avisos (POST, JSON)  salva os avisos da agenda
+       pessoal de quem chamou (ver _agenda-core.js)
+   /api/tarefas?acao=avisosTeste | avisosAgora (POST)  teste e envio
+       imediato da agenda pessoal
    O resumo do dia e os lembretes saem pelo agendador de
    api/meta-saldo.js (acao=cron).
    ============================================================ */
 var meta = require('./_meta-core');
 var tar = require('./_tarefas-core');
+var agenda = require('./_agenda-core');
 
 module.exports = async function(req, res){
   res.setHeader('Cache-Control', 'no-store');
@@ -26,6 +31,20 @@ module.exports = async function(req, res){
     if(acao === 'enviar'){
       await meta.exigeUsuario(req);
       return res.status(200).json(await tar.enviaAgora(quadro, q.data, painel));
+    }
+    /* avisos da agenda pessoal da Home (cada pessoa configura a própria) */
+    if(acao === 'avisos'){
+      var ua = await meta.exigeUsuario(req);
+      return res.status(200).json({ ok: true, config: await agenda.salvaConfig(ua.email, typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})) });
+    }
+    if(acao === 'avisosTeste'){
+      var ut = await meta.exigeUsuario(req);
+      await agenda.teste(ut.email);
+      return res.status(200).json({ ok: true });
+    }
+    if(acao === 'avisosAgora'){
+      var ug = await meta.exigeUsuario(req);
+      return res.status(200).json(await agenda.enviaAgora(ug.email, painel));
     }
     if(acao === 'teste'){
       await meta.exigeUsuario(req, true);

@@ -15,6 +15,7 @@
 var meta = require('./_meta-core');
 var rel = require('./_relatorio-core');
 var tar = require('./_tarefas-core');
+var agenda = require('./_agenda-core');
 
 function erro(msg, http){ return Object.assign(new Error(msg), { http: http }); }
 function soPost(req){ if(req.method !== 'POST') throw erro('use POST', 405); }
@@ -35,7 +36,10 @@ module.exports = async function(req, res){
       /* e as tarefas da social media: resumo do dia e lembretes de pendências */
       var tarefas, painel = 'https://' + String(req.headers['x-forwarded-host'] || req.headers.host || '');
       try{ tarefas = await tar.rodada(painel); }catch(e){ tarefas = { erro: String(e.message || e) }; }
-      return res.status(200).json({ ok: true, resumo: resumo, relatorios: relatorios, tarefas: tarefas });
+      /* e a agenda pessoal de quem ligou os avisos na Home */
+      var agendas;
+      try{ agendas = await agenda.rodada(painel); }catch(e){ agendas = { erro: String(e.message || e) }; }
+      return res.status(200).json({ ok: true, resumo: resumo, relatorios: relatorios, tarefas: tarefas, agenda: agendas });
     }
 
     if(acao === 'status'){

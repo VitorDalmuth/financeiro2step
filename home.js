@@ -93,6 +93,7 @@ function vHome(){
   '<div class="hd"><div><h1>' + homeSaudacao() + (nome ? ', ' + esc(nome) : '') + '!</h1>' +
     '<p>' + esc(tarDiaLabel(hoje).charAt(0).toUpperCase() + tarDiaLabel(hoje).slice(1)) + '</p></div>' +
     '<div class="hd-act">' + (ag.atrasadas.length ? '<span class="pill p-cr" style="padding:7px 12px;font-size:12.5px">🔔 ' + ag.atrasadas.length + ' atrasada(s)</span>' : '') +
+      '<button class="btn" onclick="mHomeAvisos()">' + (homeAvisosCfg().ligado ? '🔔 Avisos ligados' : '🔔 Avisos no WhatsApp') + '</button>' +
       (euSouAdmin() ? '<button class="btn" onclick="mCkResponsaveis()">Responsáveis</button>' : '') + '</div></div>' +
 
   (semResp ? '<div class="note">Defina quem cuida de cada frente (tráfego, social media e rotina de relatórios) para cada pessoa ver só as suas tarefas. ' +
@@ -220,3 +221,54 @@ function homeAlertasHTML(baixas, erros, uv){
   /* só troca a tela padrão; a volta do login do Facebook/Google continua abrindo em Saldo Ads */
   if(VIEW === 'dash'){ VIEW = 'home'; MOD_ABERTO = 'ini'; }
 })();
+
+/* ---------- avisos da agenda no WhatsApp (cada pessoa configura o seu) ----------
+   Salvo pelo servidor em tarefasPessoais/avisos/{chave} (api/tarefas.js?acao=avisos);
+   o agendador de hora em hora manda o resumo e as pendências (api/_agenda-core.js). */
+function homeAvisosCfg(){ return ((tarD('pessoal').avisos || {})[chaveEmail(EMAIL)]) || {}; }
+function homeAvisosApi(acao, corpo){
+  if(MEM) return Promise.reject(new Error('Na demonstração não há envio de WhatsApp'));
+  if(!AUTH || !AUTH.currentUser) return Promise.reject(new Error('Faça login de novo'));
+  return AUTH.currentUser.getIdToken().then(function(tk){
+    return fetch('/api/tarefas?acao=' + acao, { method: 'POST', headers: Object.assign({ Authorization: 'Bearer ' + tk }, corpo ? { 'Content-Type': 'application/json' } : {}), body: corpo ? JSON.stringify(corpo) : undefined });
+  }).then(function(r){
+    return r.json().catch(function(){ throw new Error('Resposta inválida do servidor (' + r.status + ')'); })
+      .then(function(j){ if(!j.ok) throw new Error(j.erro || 'Erro no servidor'); return j; });
+  });
+}
+function mHomeAvisos(){
+  var c = homeAvisosCfg(), hR = c.horaResumo != null ? +c.horaResumo : 8, lemb = (c.lembretes || [12, 15, 18]).map(Number);
+  var horas = ''; for(var h = 5; h <= 12; h++) horas += '<option value="' + h + '"' + (h === hR ? ' selected' : '') + '>' + h + 'h</option>';
+  var chips = ''; for(var l = 9; l <= 20; l++) chips += '<button type="button" data-h="' + l + '" class="' + (lemb.indexOf(l) > -1 ? 'on' : '') + '" onclick="this.classList.toggle(\'on\')">' + l + 'h</button>';
+  modal('Avisos da minha agenda no WhatsApp',
+    '<p class="sub">Você recebe no seu WhatsApp a mesma agenda desta tela: suas tarefas do dia, as atrasadas e, nos lembretes, o que ainda está pendente. Sai pelo mesmo número que manda os alertas de saldo.</p>' +
+    '<label class="chk' + (c.ligado ? ' on' : '') + '" style="margin-bottom:14px"><input type="checkbox" id="h_av_lig"' + (c.ligado ? ' checked' : '') + ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">Receber minha agenda no WhatsApp</label>' +
+    '<div class="fg"><label class="fl">Meu número</label><input class="fi mono" id="h_av_fone" inputmode="tel" placeholder="5548999999999" value="' + esc(c.fone || '') + '"><div class="hint">Com 55 e DDD, só números.</div></div>' +
+    '<div class="fr" style="grid-template-columns:1fr 2fr"><div class="fg"><label class="fl">Resumo do dia às</label><select class="fi" id="h_av_hres">' + horas + '</select></div>' +
+      '<div class="fg"><label class="fl">Lembretes das pendências</label><div class="tar-dias" id="h_av_lemb">' + chips + '</div></div></div>' +
+    '<label class="chk' + (c.diasUteis !== false ? ' on' : '') + '"><input type="checkbox" id="h_av_uteis"' + (c.diasUteis !== false ? ' checked' : '') + ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">Só de segunda a sexta</label>' +
+    '<div class="hint mt12">Se não houver tarefa nem atraso no dia, nada é enviado. "Receber agora" manda as pendências de hoje na hora.</div>',
+    '<button class="btn" onclick="fecha()">Fechar</button><button class="btn" id="h_av_teste" onclick="homeAvisosAcao(\'avisosTeste\')">Enviar teste</button>' +
+    '<button class="btn" id="h_av_agora" onclick="homeAvisosAcao(\'avisosAgora\')">Receber agora</button><button class="btn btn-p" onclick="homeSalvaAvisos()">Salvar</button>');
+}
+function homeAvisosLe(){
+  var lig = $('h_av_lig').checked, fone = $('h_av_fone').value.replace(/\D/g, '');
+  if(lig && !/^55\d{10,11}$/.test(fone)){ toast('Número inválido: use 55 + DDD + número, ex. 5548999999999', 'err'); return null; }
+  return { ligado: lig, fone: fone, horaResumo: +$('h_av_hres').value, diasUteis: $('h_av_uteis').checked,
+    lembretes: [].map.call(document.querySelectorAll('#h_av_lemb button.on'), function(b){ return +b.dataset.h; }) };
+}
+function homeSalvaAvisos(){
+  var c = homeAvisosLe(); if(!c) return;
+  homeAvisosApi('avisos', c).then(function(){ fecha(); toast(c.ligado ? 'Avisos ligados' : 'Configuração salva', 'ok'); render(); }, function(e){ toast(e.message, 'err'); });
+}
+/* teste e "receber agora": salvam antes, para usar o número que está na tela */
+function homeAvisosAcao(acao){
+  var c = homeAvisosLe(); if(!c) return;
+  if(!c.fone){ toast('Informe seu número primeiro', 'err'); return; }
+  var b = $(acao === 'avisosTeste' ? 'h_av_teste' : 'h_av_agora'); if(b){ b.disabled = true; b.textContent = 'Enviando...'; }
+  homeAvisosApi('avisos', c).then(function(){ return homeAvisosApi(acao); })
+    .then(function(j){ toast(acao === 'avisosTeste' ? 'Mensagem de teste enviada' : 'Agenda enviada: ' + (j.pendentes || 0) + ' pendente(s) hoje, ' + (j.atrasadas || 0) + ' atrasada(s)', 'ok'); },
+          function(e){ toast(e.message, 'err'); })
+    .then(function(){ if(b){ b.disabled = false; b.textContent = acao === 'avisosTeste' ? 'Enviar teste' : 'Receber agora'; } });
+}
+

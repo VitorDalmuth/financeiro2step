@@ -23,7 +23,8 @@ var CK = { d: null, id: '', ini: '', rotina: {}, ligado: false };
 var CK_ST = { ok: 'Concluído', and: 'Em andamento', pen: 'Pendente' };
 var CK_ORDEM = ['ok', 'and', 'pen'];
 var CK_ROTINA = [['relatorio', 'Enviar relatório'], ['checklist', 'Enviar checklist'], ['audio', 'Enviar áudio']];
-var CK_FRENTES = [['relatorios', 'Rotina de relatórios (segunda)'], ['trafego', 'Tarefas de tráfego'], ['social', 'Tarefas de social media']];
+/* a rotina de segunda saiu da agenda da Home: o responsável dela não aparece mais aqui (o valor salvo é mantido) */
+var CK_FRENTES = [['trafego', 'Tarefas de tráfego'], ['social', 'Tarefas de social media']];
 
 /* estilos só deste módulo */
 (function(){
@@ -399,12 +400,7 @@ function mCkResponsaveis(){
   modal('Responsáveis',
     '<div class="hint" style="margin:0 0 14px">Quem cuida de cada frente. As tarefas aparecem na agenda dessa pessoa, na Home.</div>' +
     CK_FRENTES.map(function(f){ return '<div class="fg"><label class="fl">' + f[1] + '</label>' + sel('ck_r_' + f[0], r[f[0]] || '') + '</div>'; }).join('') +
-    (clis.length ? '<div class="fl mt18">Rotina de relatórios por cliente</div><div class="hint" style="margin:-2px 0 10px">Deixe em "Padrão" para usar o responsável da rotina acima.</div>' +
-      clis.map(function(id){
-        return '<div class="flx" style="flex-wrap:nowrap;margin-bottom:8px"><span style="flex:1;min-width:0;font-size:13px">' + esc(relNome(id)) + '</span>' +
-          '<div style="width:52%">' + sel('ck_c_' + id, (REL.cfg[id] || {}).responsavel || '', 'Padrão') + '</div></div>';
-      }).join('') : '<div class="hint">Os clientes aparecem aqui quando forem configurados em Relatórios.</div>') +
-    '<div class="hint mt12">A rotina de segunda gera, para cada cliente dos Relatórios: Enviar relatório, Enviar checklist e Enviar áudio.</div>',
+    '',
     '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="ckSalvaResponsaveis()">Salvar</button>', true);
 }
 function ckSalvaResponsaveis(){

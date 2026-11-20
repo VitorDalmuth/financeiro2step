@@ -118,8 +118,8 @@ function doDia(data, D){
   return [].concat(
     doDiaQuadro(data, D.social, D, true, 'social', D.resp.social),
     doDiaQuadro(data, D.trafego, D, false, 'trafego', D.resp.trafego),
-    doDiaQuadro(data, D.pessoal, D, false, 'pessoal', ''),
-    rotinaDoDia(data, D));
+    doDiaQuadro(data, D.pessoal, D, false, 'pessoal', ''));
+  /* a rotina de segunda dos relatórios (rotinaDoDia) saiu da agenda, igual à Home */
 }
 function visivel(t, chave, admin){ return t.resp ? t.resp === chave : admin; }
 function agendaDe(D, chave, hoje){

@@ -1,8 +1,11 @@
 /* ============================================================
    2STEP · HOME
    Primeira tela ao abrir o app. À esquerda, a agenda do dia de cada
-   pessoa (tarefas de social media, de tráfego e a rotina de relatórios
-   de segunda), com as atrasadas dos últimos dias. À direita, os alertas:
+   pessoa (tarefas de social media, de tráfego e avulsas), com as
+   atrasadas dos últimos dias; cada tarefa pode ser movida para outro dia.
+   A rotina de segunda dos relatórios (enviar relatório, checklist e
+   áudio) não entra mais aqui: é rotina fixa e poluía a agenda.
+   À direita, os alertas:
    contas de anúncio com saldo abaixo do mínimo.
    Para admin e operação. Não mostra nada do financeiro.
    Depende de app.js (S, EMAIL, VIEW, MOD_ABERTO, MODULOS, go, esc,
@@ -45,6 +48,8 @@ var HOME_ORIGEM = { social: 'Social media', trafego: 'Tráfego', rel: 'Relatóri
   '.hm-wt{display:flex;gap:6px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--line)}.hm-wt .tar-ck{flex:none;transform:scale(.85);transform-origin:left top}' +
   '.hm-wt-t{font-size:12px;line-height:1.3;word-break:break-word}.hm-wt.ok .hm-wt-t{text-decoration:line-through;color:var(--mute)}' +
   '.hm-wt-c{font-size:10.5px;color:var(--mute);margin-top:1px}.hm-wt-v{font-size:11.5px;color:var(--mute2);padding:6px 0}' +
+  '.hm-mv{background:none;border:none;padding:0;margin-top:2px;font-size:10.5px;font-weight:700;color:var(--volt);cursor:pointer}.hm-mv:hover{text-decoration:underline}' +
+  '.hm-rap{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}' +
   '@media(max-width:600px){.hm-d span{font-size:9.5px}}' +
   '@media(max-width:1000px){.hm-g{grid-template-columns:1fr}}';
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
@@ -67,7 +72,6 @@ function homeDoDia(data){
     /* tarefa com responsável próprio vai para ele; senão, para o responsável da frente */
     tarDoDia(data, q).forEach(function(t){ out.push(Object.assign({}, t, { q: q, data: data, resp: t.resp || (q === 'pessoal' ? '' : r[q] || '') })); });
   });
-  ckRotinaDoDia(data).forEach(function(t){ out.push(Object.assign({}, t, { data: data })); });
   return out;
 }
 function homeVisivel(t){
@@ -103,7 +107,7 @@ function vHome(){
   var erros = salContas().filter(function(c){ return c.ativo !== false && salSit(c) === 'erro'; });
   var uv = (SAL.d || {}).ultimaVerificacao;
   var nome = homeNome(), r = ckResp();
-  var semResp = euSouAdmin() && !(r.social || r.trafego || r.relatorios);
+  var semResp = euSouAdmin() && !(r.social || r.trafego);
 
   return '' +
   '<div class="hd"><div><h1>' + homeSaudacao() + (nome ? ', ' + esc(nome) : '') + '!</h1>' +
@@ -112,7 +116,7 @@ function vHome(){
       '<button class="btn" onclick="mHomeAvisos()">' + (homeAvisosCfg().ligado ? '🔔 Avisos ligados' : '🔔 Avisos no WhatsApp') + '</button>' +
       (euSouAdmin() ? '<button class="btn" onclick="mCkResponsaveis()">Responsáveis</button>' : '') + '</div></div>' +
 
-  (semResp ? '<div class="note">Defina quem cuida de cada frente (tráfego, social media e rotina de relatórios) para cada pessoa ver só as suas tarefas. ' +
+  (semResp ? '<div class="note">Defina quem cuida de cada frente (tráfego e social media) para cada pessoa ver só as suas tarefas. ' +
     '<button class="btn btn-s btn-p" style="margin-left:6px" onclick="mCkResponsaveis()">Definir responsáveis</button></div>' : '') +
 
   '<div class="hm-g' + ((HOME.modo || 'dia') === 'semana' ? ' hm-g1' : '') + '">' + homeTarefasHTML(ag, hoje) + homeAlertasHTML(baixas, erros, uv) + '</div>';
@@ -153,7 +157,8 @@ function homeSemanaHTML(hoje){
       (ts.length ? ts.map(function(t){
         return '<div class="hm-wt' + (t.feita ? ' ok' : '') + '">' +
           '<button class="tar-ck" aria-label="' + (t.feita ? 'Desmarcar' : 'Marcar como feita') + '" onclick="homeMarca(\'' + t.q + '\',\'' + t.data + '\',\'' + esc(t.chave) + '\',' + (t.feita ? 'false' : 'true') + ',' + !!(t.feita && t.feita.auto) + ')">✓</button>' +
-          '<div style="min-width:0"><div class="hm-wt-t">' + esc(t.titulo) + '</div><div class="hm-wt-c">' + esc(t.cliente) + ' · ' + HOME_ORIGEM[t.q] + (HOME.agenda === 'todos' ? ' · ' + esc(t.resp ? ckNomeUsuario(t.resp) : 'sem responsável') : '') + '</div></div></div>';
+          '<div style="min-width:0"><div class="hm-wt-t">' + esc(t.titulo) + '</div><div class="hm-wt-c">' + esc(t.cliente) + ' · ' + HOME_ORIGEM[t.q] + (HOME.agenda === 'todos' ? ' · ' + esc(t.resp ? ckNomeUsuario(t.resp) : 'sem responsável') : '') + '</div>' +
+          (TAR_Q[t.q] && !t.feita ? '<button class="hm-mv" onclick="mHomeMover(\'' + t.q + '\',\'' + t.data + '\',\'' + esc(t.chave) + '\')">mover ›</button>' : '') + '</div></div>';
       }).join('') : '<div class="hm-wt-v">sem tarefas</div>') + '</div>';
   }
   return '<div class="hm-w">' + cols + '</div>';
@@ -188,6 +193,7 @@ function homeTarefasHTML(ag, hoje){
         var at = t.data < hoje && !t.feita;
         var hora = t.feita && t.feita.em ? new Date(t.feita.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
         var podeTirar = t.q === 'pessoal' && (euSouAdmin() || t.resp === chaveEmail(EMAIL));
+        var podeMover = TAR_Q[t.q] && !t.feita;
         return '<div class="tar-t' + (t.feita ? ' ok' : '') + (at ? ' at' : '') + '">' +
           '<button class="tar-ck" aria-label="' + (t.feita ? 'Desmarcar' : 'Marcar como feita') + '" onclick="homeMarca(\'' + t.q + '\',\'' + t.data + '\',\'' + esc(t.chave) + '\',' + (t.feita ? 'false' : 'true') + ',' + !!(t.feita && t.feita.auto) + ')">✓</button>' +
           '<div style="min-width:0"><div class="tar-tt">' + esc(t.titulo) + '</div>' +
@@ -195,7 +201,9 @@ function homeTarefasHTML(ag, hoje){
               (at ? '<span class="hm-tag at">Atrasado · ' + esc(tarDiaLabel(t.data).replace(/-feira/, '')) + '</span>' : '') +
               (HOME.agenda === 'todos' ? '<span class="hm-tag">' + esc(t.resp ? ckNomeUsuario(t.resp) : 'sem responsável') + '</span>' : '') + '</div>' +
             (t.feita ? '<div class="sub">' + (t.feita.auto ? 'marcada pelo download' : 'feita às ' + hora + (t.feita.por ? ' · ' + esc(String(t.feita.por).split('@')[0]) : '')) + '</div>' : '') +
-          '</div>' + (podeTirar ? '<div class="tar-ac"><button class="btn btn-s btn-d" onclick="homeTira(\'' + t.data + '\',\'' + esc(t.chave) + '\')" aria-label="Excluir tarefa">×</button></div>' : '') + '</div>';
+          '</div>' + (podeMover || podeTirar ? '<div class="tar-ac">' +
+            (podeMover ? '<button class="btn btn-s" onclick="mHomeMover(\'' + t.q + '\',\'' + t.data + '\',\'' + esc(t.chave) + '\')">Mover</button>' : '') +
+            (podeTirar ? '<button class="btn btn-s btn-d" onclick="homeTira(\'' + t.data + '\',\'' + esc(t.chave) + '\')" aria-label="Excluir tarefa">×</button>' : '') + '</div>' : '') + '</div>';
       }).join('');
   }).join('');
 
@@ -257,6 +265,27 @@ function homeSalvaTarefa(){
     .then(function(){}, function(e){ toast(e.message, 'err'); });
   fecha();
   toast('Tarefa adicionada' + (resp !== eu ? ' para ' + (ckNomeUsuario(resp) || 'a pessoa') : '') + (dia !== tarHoje() ? ' em ' + tarDiaLabel(dia) : ''), 'ok');
+  render();
+}
+/* ---------- mover tarefa para outro dia (usa a mesma regra de Mover das abas de tarefas) ---------- */
+function mHomeMover(q, data, chave){
+  if(!TAR_Q[q]) return;
+  TAR.q = q;
+  var t = tarAcha(data, chave);
+  if(!t) return;
+  var hoje = tarHoje(), sug = data < hoje ? hoje : addDias(data, 1);
+  var seg = addDias(hoje, 8 - tarDow(hoje));
+  var rap = [[hoje, 'Hoje'], [addDias(hoje, 1), 'Amanhã'], [seg, 'Segunda que vem']].filter(function(x){ return x[0] !== data; });
+  modal('Mover tarefa',
+    '<div class="fg"><div class="nm">' + esc(t.titulo) + '</div><div class="sub">' + esc(t.cliente) + ' · ' + HOME_ORIGEM[q] + ' · hoje está em ' + esc(tarDiaLabel(data)) + '</div></div>' +
+    '<div class="fg"><label class="fl">Mover para</label><input type="date" class="fi" id="t_novo" value="' + sug + '">' +
+      '<div class="hm-rap">' + rap.map(function(x){ return '<button type="button" class="btn btn-s" onclick="$(\'t_novo\').value=\'' + x[0] + '\'">' + x[1] + '</button>'; }).join('') + '</div></div>' +
+    (t.fixa ? '<div class="hint">Tarefa da rotina: só muda nesta data. A rotina do cliente continua igual nos outros dias.</div>' : ''),
+    '<button class="btn" onclick="fecha()">Cancelar</button><button class="btn btn-p" onclick="homeSalvaMover(\'' + q + '\',\'' + data + '\',\'' + esc(chave) + '\')">Mover</button>');
+}
+function homeSalvaMover(q, data, chave){
+  TAR.q = q;
+  tarSalvaMover(data, chave);
   render();
 }
 function homeTira(data, chave){
